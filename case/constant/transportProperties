@@ -1,0 +1,68 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2312                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      transportProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Phase 1 is the liquid: water in Steps 1-3, molasses in Step 4. The name
+// "water" is kept for all steps so that the phase fraction is alpha.water.
+//
+// The values below are switched by scripts/set_step.sh <1-4>; entries are
+// replaced in place, so keep one "key value;" per line.
+
+activeStep      1;
+
+phases          (water air);
+
+water
+{
+    transportModel  Newtonian;
+    nu              1.003807e-06;   // [m2/s] = mu0/rho (mixture class only)
+    rho             998.2;          // [kg/m3]
+    Cp              4182;           // [J/kg/K]
+    kappa           0.598;          // [W/m/K] thermal conductivity
+}
+
+air
+{
+    transportModel  Newtonian;
+    nu              1.37e-05;       // [m2/s] at 4 degC
+    rho             1.27;           // [kg/m3] at 4 degC
+    Cp              1005;           // [J/kg/K]
+    kappa           0.0244;         // [W/m/K]
+}
+
+sigma           0.0728;             // [N/m]
+
+// Mixture energy equation (temperature form)
+energy
+{
+    solveEnergy     no;
+}
+
+// Liquid viscosity (Andrade/Arrhenius):  mu(T) = mu0*exp(B*(1/T - 1/T0))
+// The momentum equation uses this law, not water/nu.
+liquidViscosity
+{
+    temperatureDependent no;
+    mu0             1.002e-3;       // [Pa s] at T0
+    T0              293.15;         // [K]
+    B               2274;           // [K] = Ea/R
+    TMin            250;            // [K] clip T before evaluating mu(T)
+    TMax            373.15;         // [K]
+    muMax           1e4;            // [Pa s] cap of mu(T)
+}
+
+
+// ************************************************************************* //

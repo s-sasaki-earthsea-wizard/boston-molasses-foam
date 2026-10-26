@@ -1,0 +1,21 @@
+# OpenFOAM v2312 environment for the Boston molasses flood simulation.
+# Usage is wrapped by the Makefile (make/docker.mk); the project root
+# (one level above this file) is mounted at /work.
+name: boston-molasses-foam
+
+services:
+  openfoam:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: boston-molasses-foam/openfoam:v2312
+    # Run as the host user so that files in the mounted project stay owned
+    # by them (HOST_UID/HOST_GID are exported by make/docker.mk)
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    init: true
+    working_dir: /work
+    volumes:
+      - ..:/work
+    environment:
+      PROJECT_ROOT: /work
+      OMP_NUM_THREADS: "1"

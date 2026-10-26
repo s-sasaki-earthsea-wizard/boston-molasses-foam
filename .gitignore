@@ -1,0 +1,21 @@
+# Session notes (not versioned)
+.claude-notes/
+
+# Solver build artefacts
+build/
+solver/*/Make/*/
+
+# Generated case data (0/ is created from 0.orig by `make init`)
+case/0/
+case/constant/polyMesh/
+case/[0-9]*/
+!case/0.orig/
+case/processor*/
+case/postProcessing/
+case/log.*
+case/VTK/
+case/dynamicCode/
+case/*.foam
+
+# Extra run directories (make run-stepN CASE_DIR=case-...)
+case-*/
