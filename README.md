@@ -234,7 +234,10 @@ reaches the wall after t₀ = L/c₀ ≈ 1.1 s (L = 12 m, c₀ = √(gH)), and t
 reflected wave invalidates the solution behind its head,
 x_r = L + 2c₀t − 3L(t/t₀)^(1/3) (≈ 30 m at 3.2 s, ≈ 116 m at 8 s), shaded in
 the panel. Beyond x_r the simulated depth follows Ritter; for t ≲ 1 s the
-collapse is non-hydrostatic and deviates from shallow-water theory.
+collapse is non-hydrostatic and deviates from shallow-water theory. Ritter's
+solution is frictionless, and so is the water run in practice (see
+[Known limitations](#known-limitations)): the agreement does not mean the
+front speed or shape is realistic.
 
 ## Known limitations
 
@@ -246,6 +249,15 @@ collapse is non-hydrostatic and deviates from shallow-water theory.
   code path rather than predict cooling. Cooling-driven thickening (minutes
   to hours) needs resolved thermal boundary layers, air-side convection and
   much longer runs.
+- **Bottom friction is effectively absent for water.** The bottom is a
+  laminar no-slip wall (no turbulence model, wall function, roughness or
+  friction law), so the wall shear is μ u₁ / (Δy/2) with the first-cell
+  velocity u₁. In the Step 2 animation run it is ~0.05 Pa, while a Manning
+  estimate (n = 0.015) gives ~200–260 Pa at Re = uh/ν ~ 10⁷: the water front
+  runs nearly frictionless (front speed 95 % of Ritter's 2√(gH)). For
+  molasses (μ0 = 5 Pa s) the same expression gives ~400 Pa, but it depends on
+  the mesh, because the laminar boundary layer √(ν t) (~6 cm after 1 s) is
+  not resolved by the 0.5 m cells.
 - **Thin-layer stage under-resolved.** Viscosity matters mostly once the
   layer is thin (h < 1 m = 2 cells); bottom-graded or refined meshes are
   needed there.
