@@ -169,20 +169,29 @@ without touching the file if any entry is missing.
   from `$FOAM_SOLVERS/multiphase/VoF` of the installed v2312.
 - **`run-stepN` overwrites** the results in `CASE_DIR`; use separate
   `CASE_DIR`s to compare steps.
+- **Interface compression `cAlpha 0.5`** (`system/fvSolution`) — with
+  `cAlpha 1` the thin (1–2 cell), fast (~20 m/s) layer develops surface
+  ripples of up to 0.25 m that are numerical. They grow in time and
+  travel at u − c, i.e. they excite the layer's gravity waves. Their
+  wavelength (~10–20 cells) follows the mesh instead of converging (6–10 m
+  at Δ = 0.5 m, 2–3 m at Δ = 0.25 m). With `cAlpha 0.5` they stay below
+  0.03 m and decay, while the mean depth profile is unchanged; the interface
+  spreads over 2–3 instead of 1–2 cells.
 
 ## Reference runs
 
-OpenFOAM v2312 container on a 16-core Linux host, serial, results on a CIFS
-share. Each step: 60 s simulated, ~3,300 time steps, ~110 s wall time,
-~30 MB RAM, ~100 MB output (120 compressed time directories).
+OpenFOAM v2312 container on a 16-core Linux host, each run serial (Steps 1–4
+run side by side), results on a CIFS share. Each step: 60 s simulated,
+~2,700 time steps, ~120 s wall time, ~30 MB RAM, ~100 MB output (120
+compressed time directories).
 
 | Check                                   | Result                                      |
 |-----------------------------------------|---------------------------------------------|
 | Front speed 3–8 s, water (Step 1)       | ~20.5 m/s (Ritter 2√(gH) = 21.7 m/s)         |
-| Front speed 3–8 s, molasses (Step 4)    | ~19 m/s (Re ≈ 7·10⁴: inertia-dominated)      |
+| Front speed 3–8 s, molasses (Step 4)    | ~20 m/s (Re ≈ 7·10⁴: inertia-dominated)      |
 | Liquid volume before outflow (~9 s)     | 144.000 m² (= 12 × 12) in all steps          |
-| alpha bounds                            | [−1.6e-4, 1 + 1.7e-4]                        |
-| T bounds, Steps 2–4                     | [277.15, 293.152] K                          |
+| alpha bounds                            | [−4.9e-5, 1 + 2.9e-5]                        |
+| T bounds, Steps 2–4                     | [277.15, 293.150] K                          |
 | Step 1 vs Step 2 velocity at t = 5 s    | bit-identical (energy is one-way coupled when mu is constant) |
 
 ## Animations
@@ -219,8 +228,8 @@ cropped to the initial column height; the depth panel carries the thin-layer
 detail.
 
 **Temperature.** In Step 2 the heat is carried by the liquid: in the reference
-animation run, 99.5 % of the heat found in cells with alpha < 0.5 belongs to
-traces of liquid, and the mean liquid temperature drops by 0.008 K in 15 s
+animation run, ≥ 99.5 % of the heat found in cells with alpha < 0.5 belongs to
+traces of liquid, and the mean liquid temperature drops by < 0.01 K in 15 s
 (Pe = UL/a ~ 10⁹). The panel therefore shows a uniform 20 °C liquid, the
 advection-only baseline for later runs that resolve interfacial cooling. The
 air is hidden on purpose: with one mixture temperature per cell, air that
@@ -244,9 +253,9 @@ front speed or shape is realistic.
 - **Interfacial heat transfer is not resolved at Δ = 0.5 m.** The conductive
   penetration depth √(κ t / ρCp) is ~1 mm (molasses) to ~4 mm (water) after
   one minute, i.e. far below one cell; what exchange there is happens in the
-  mixed interface cells. In the reference runs the liquid cells cool by
-  < 0.3 K within 60 s and mu(T) changes by < 1 %, so Steps 2–4 verify the
-  code path rather than predict cooling. Cooling-driven thickening (minutes
+  mixed interface cells. In the reference runs the liquid cells
+  (alpha > 0.99) cool by < 0.01 K within 60 s and mu(T) changes by ≤ 1 %, so
+  Steps 2–4 verify the code path rather than predict cooling. Cooling-driven thickening (minutes
   to hours) needs resolved thermal boundary layers, air-side convection and
   much longer runs.
 - **Bottom friction is effectively absent for water.** The bottom is a
@@ -254,7 +263,7 @@ front speed or shape is realistic.
   friction law), so the wall shear is μ u₁ / (Δy/2) with the first-cell
   velocity u₁. In the Step 2 animation run it is ~0.05 Pa, while a Manning
   estimate (n = 0.015) gives ~200–260 Pa at Re = uh/ν ~ 10⁷: the water front
-  runs nearly frictionless (front speed 95 % of Ritter's 2√(gH)). For
+  runs nearly frictionless (front speed 94 % of Ritter's 2√(gH)). For
   molasses (μ0 = 5 Pa s) the same expression gives ~400 Pa, but it depends on
   the mesh, because the laminar boundary layer √(ν t) (~6 cm after 1 s) is
   not resolved by the 0.5 m cells.
