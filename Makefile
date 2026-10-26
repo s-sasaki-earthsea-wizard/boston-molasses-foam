@@ -3,7 +3,8 @@
 #  OpenFOAM v2312 + Docker
 #
 #  Every OpenFOAM command is wrapped in `docker compose run --rm openfoam ...`
-#  (see make/docker.mk). Run `make help` for the list of targets.
+#  (see make/docker.mk); animations are rendered on the host with uv and
+#  ffmpeg (see make/post.mk). Run `make help` for the list of targets.
 # =============================================================================
 
 SHELL         := /bin/bash
@@ -19,6 +20,7 @@ BUILD_DIR     := build
 include make/docker.mk
 include make/solver.mk
 include make/case.mk
+include make/post.mk
 
 .PHONY: help clean clean-all
 
