@@ -5,7 +5,14 @@ surrounding atmosphere and whose viscosity depends on temperature. The setup
 is inspired by the Boston Molasses Disaster (15 January 1919).
 
 Everything runs in Docker; the host only needs `make`, `bash`, `awk` and
-Docker Compose v2.
+Docker Compose v2. Rendering the animations additionally needs
+[uv](https://docs.astral.sh/uv/) and `ffmpeg` on the host.
+
+![Step 2: water dam break, liquid coloured by speed and temperature, depth against Ritter's solution](docs/media/dambreak-step2.gif)
+
+*Step 2 (water, energy equation on), 0–15 s in real time. The heat moves with
+the liquid: its mean temperature drops by less than 0.01 K. See
+[Animations](#animations) for how to read the panels.*
 
 ## Quick start
 
@@ -29,6 +36,9 @@ in one command (after the image is built).
 | `mesh`          | `blockMesh` (360 × 40 × 1 cells)                                     |
 | `init`          | Copy `0.orig` → `0`, then `setFields`                                |
 | `run-step1..4`  | `scripts/set_step.sh N`, remove previous results, run the solver     |
+| `run-anim`      | Copy the inputs to `ANIM_DIR`, set a dense output, run `ANIM_STEP`   |
+| `anim`          | Render frames, mp4 and GIF of `ANIM_DIR` (host: uv + ffmpeg)         |
+| `readme-gif`    | `anim` + copy the GIF to `docs/media/dambreak-stepN.gif`             |
 | `clean`         | Remove time directories, solver logs, `postProcessing/`              |
 | `clean-all`     | `clean` + mesh, `0/`, `build/` and wmake objects                     |
 
@@ -48,17 +58,27 @@ make run-step4 CASE_DIR=case-step4
 ```text
 .
 ├── Makefile                 # includes make/*.mk, help/clean targets
+├── pyproject.toml, uv.lock # Python environment of post/ (uv)
 ├── make/
 │   ├── docker.mk            # compose wrapper, docker-build, docker-shell
 │   ├── solver.mk            # build-solver
-│   └── case.mk              # mesh, init, run-step1..4
+│   ├── case.mk              # mesh, init, run-step1..4
+│   └── post.mk              # run-anim, anim, readme-gif
 ├── docker/
 │   ├── Dockerfile           # opencfd/openfoam-dev:2312 + project overrides
 │   ├── docker-compose.yml   # mounts the project root at /work
 │   └── entrypoint.sh        # replaces /openfoam/run (see notes)
 ├── scripts/
 │   ├── set_step.sh          # switch transportProperties to step 1..4
+│   ├── prepare_anim_case.sh # animation case: copy inputs, set endTime/writeInterval
 │   └── clean.sh
+├── post/                    # frames and animations (runs on the host)
+│   ├── foamio.py            # ASCII field reader, grid from cell centres
+│   ├── frames.py            # case metadata, fields of one time step
+│   ├── analytic.py          # Ritter solution with the wall reflection
+│   ├── plot.py              # panels (flow, temperature, depth, froude), layout
+│   └── animate.py           # CLI: frames -> mp4 + GIF
+├── docs/media/              # README animation
 ├── solver/interThermalFoam/
 │   ├── Make/{files,options}
 │   ├── interThermalFoam.C   # time loop
@@ -164,6 +184,57 @@ share. Each step: 60 s simulated, ~3,300 time steps, ~110 s wall time,
 | alpha bounds                            | [−1.6e-4, 1 + 1.7e-4]                        |
 | T bounds, Steps 2–4                     | [277.15, 293.152] K                          |
 | Step 1 vs Step 2 velocity at t = 5 s    | bit-identical (energy is one-way coupled when mu is constant) |
+
+## Animations
+
+```bash
+make run-anim                 # Step 2 in case-anim-step2: 0–15 s, written every 0.04 s
+make anim                     # -> case-anim-step2/postProcessing/anim/{frames/,animation.mp4,animation.gif}
+make readme-gif               # anim + copy the GIF to docs/media/dambreak-step2.gif
+make run-anim anim ANIM_STEP=4                                # another step
+make anim ANIM_PANELS=flow,depth,froude ANIM_ARGS='--t-max 10' # other panels
+```
+
+`run-anim` copies the inputs of `CASE_DIR` into `ANIM_DIR`
+(default `case-anim-step$(ANIM_STEP)`), sets `endTime` / `writeInterval`
+(`ANIM_END`, `ANIM_WRITE`) and runs `run-stepN` there, so the reference runs
+keep their 60 s / 0.5 s output. `anim` writes the cell centres (`0/C`, used to
+recover the grid; uniform grids only for now) and calls
+`uv run python -m post.animate` (see `--help` for speed, resolution, GIF frame
+rate, time range, title). Frames are rendered once at 1920 px; the mp4
+(H.264, for slides) plays them in real time at 25 fps, the GIF is the same
+frames at 960 px and 12.5 fps (~10 MB budget).
+
+Panels, top to bottom, sharing the x axis:
+
+| Panel         | Shows                                                                            |
+|---------------|----------------------------------------------------------------------------------|
+| `flow`        | Liquid coloured by speed \|U\|, blended with the air colour by alpha; alpha = 0.5 contour |
+| `temperature` | Liquid coloured by T, same blending; alpha = 0.5 contour                         |
+| `depth`       | Depth h(x) = Σ alpha Δy against Ritter's shallow-water solution                  |
+| `froude`      | Froude number of the depth-averaged flow against Ritter (not in the README GIF)  |
+
+The strips keep the true aspect ratio (no vertical exaggeration) and are
+cropped to the initial column height; the depth panel carries the thin-layer
+detail.
+
+**Temperature.** In Step 2 the heat is carried by the liquid: in the reference
+animation run, 99.5 % of the heat found in cells with alpha < 0.5 belongs to
+traces of liquid, and the mean liquid temperature drops by 0.008 K in 15 s
+(Pe = UL/a ~ 10⁹). The panel therefore shows a uniform 20 °C liquid, the
+advection-only baseline for later runs that resolve interfacial cooling. The
+air is hidden on purpose: with one mixture temperature per cell, air that
+shared a cell with liquid traces takes the liquid temperature while holding
+< 0.1 % of the heat, and the laminar air flow carries it into warm "plumes"
+up to ~8 m above the surface. They are a model artefact, not heating of the
+atmosphere.
+
+**Ritter's solution** assumes an infinite reservoir. Here the rarefaction
+reaches the wall after t₀ = L/c₀ ≈ 1.1 s (L = 12 m, c₀ = √(gH)), and the
+reflected wave invalidates the solution behind its head,
+x_r = L + 2c₀t − 3L(t/t₀)^(1/3) (≈ 30 m at 3.2 s, ≈ 116 m at 8 s), shaded in
+the panel. Beyond x_r the simulated depth follows Ritter; for t ≲ 1 s the
+collapse is non-hydrostatic and deviates from shallow-water theory.
 
 ## Known limitations
 
