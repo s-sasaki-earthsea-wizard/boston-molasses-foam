@@ -8,6 +8,7 @@
 #   readme-gif  anim + copy the GIF to docs/media for the README
 #   metrics     front, volume and bounds of METRICS_DIRS (python -m post.metrics)
 #   readme-fronts  plot the fronts of the README reference runs to docs/media
+#   readme-step5   fronts and depth profiles of the Step 5 runs against Huppert
 #
 # Example: make run-anim anim ANIM_STEP=4
 #          make anim ANIM_PANELS=flow,depth,froude ANIM_ARGS='--t-max 10'
@@ -27,6 +28,11 @@ METRICS_DIRS      ?= $(CASE_DIR)
 METRICS_ARGS      ?=
 README_FRONTS     := docs/media/fronts-step4.svg
 README_FRONT_DIRS ?= case-step1 case-step4-low case-step4-central case-step4-high
+README_STEP5_DIRS ?= case-step5-low case-step5-central case-step5-high
+README_STEP5_T    := 30 60 120
+README_STEP5_ARGS := --arrival 100 200 300 --front-at $(README_STEP5_T) --huppert \
+	--plot docs/media/fronts-step5.svg \
+	--profiles docs/media/profiles-step5.svg --profile-times $(README_STEP5_T)
 
 # Cell centres (0/C) let post/ recover the grid from the mesh
 # $(call centres_cmd,<case dir>)
@@ -34,7 +40,7 @@ centres_cmd = cd $(1) && postProcess -func writeCellCentres -time 0 2>&1 | tee l
 # $(call need_centres,<case dir>): write 0/C unless it exists
 need_centres = $(if $(wildcard $(1)/0/C.gz $(1)/0/C),,$(call foam,$(call centres_cmd,$(1)));)
 
-.PHONY: run-anim anim readme-gif metrics readme-fronts
+.PHONY: run-anim anim readme-gif metrics readme-fronts readme-step5
 
 run-anim: ## Run step ANIM_STEP in ANIM_DIR with dense output (default: Step 2, 15 s, every 0.04 s)
 	bash scripts/prepare_anim_case.sh $(CASE_DIR) $(ANIM_DIR)
@@ -57,3 +63,6 @@ metrics: ## Front, volume and bounds of METRICS_DIRS (default CASE_DIR; host: uv
 
 readme-fronts: ## Plot the fronts of README_FRONT_DIRS to docs/media/fronts-step4.svg
 	$(MAKE) --no-print-directory metrics METRICS_DIRS="$(README_FRONT_DIRS)" METRICS_ARGS="--plot $(README_FRONTS)"
+
+readme-step5: ## Plot fronts and depth profiles of README_STEP5_DIRS to docs/media/*-step5.svg
+	$(MAKE) --no-print-directory metrics METRICS_DIRS="$(README_STEP5_DIRS)" METRICS_ARGS="$(README_STEP5_ARGS)"
