@@ -16,6 +16,8 @@
 MESH_FILE     := $(CASE_DIR)/constant/polyMesh/.stamp
 INIT_FILE     := $(CASE_DIR)/0/.stamp
 STEPS         := 1 2 3 4
+# Molasses viscosity of Step 4 (scripts/set_step.sh): low, central or high
+MOLASSES_MU   ?= central
 RUN_STEPS     := $(addprefix run-step,$(STEPS))
 
 BLOCKMESH_CMD := cd $(CASE_DIR) && blockMesh 2>&1 | tee log.blockMesh && touch constant/polyMesh/.stamp
@@ -38,10 +40,10 @@ $(INIT_FILE): $(MESH_FILE) $(CASE_DIR)/system/setFieldsDict $(wildcard $(CASE_DI
 run-step1: ## Step 1: isothermal water dam-break
 run-step2: ## Step 2: water + heat exchange with the atmosphere
 run-step3: ## Step 3: water + temperature-dependent viscosity
-run-step4: ## Step 4: Boston molasses (high density and viscosity)
+run-step4: ## Step 4: Boston molasses (MOLASSES_MU=low|central|high, default central)
 
 $(RUN_STEPS): run-step%: $(SOLVER_BIN) $(MESH_FILE)
-	bash scripts/set_step.sh $* $(CASE_DIR)
+	bash scripts/set_step.sh $* $(CASE_DIR) $(MOLASSES_MU)
 	$(MAKE) --no-print-directory $(INIT_FILE)
 	bash scripts/clean.sh $(CASE_DIR)
 	$(call foam,cd $(CASE_DIR) && $(SOLVER_NAME) 2>&1 | tee log.$(SOLVER_NAME).step$*)

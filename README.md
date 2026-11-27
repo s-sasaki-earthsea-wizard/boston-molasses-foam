@@ -171,7 +171,7 @@ air at 277.15 K.
 | 1    | water    | off    | off   | 293.15             | 998.2       | 1.002e-3   | –      | 4182        | 0.598         |
 | 2    | water    | on     | off   | 293.15             | 998.2       | 1.002e-3   | –      | 4182        | 0.598         |
 | 3    | water    | on     | on    | 293.15             | 998.2       | 1.002e-3   | 2274   | 4182        | 0.598         |
-| 4    | molasses | on     | on    | 283.15             | 1430        | 55         | 8.5e3  | 2050        | 0.31          |
+| 4    | molasses | on     | on    | 283.15             | 1430        | 20/55/200  | 8.5e3  | 2050        | 0.31          |
 
 T0 is the reference temperature of mu0 in mu(T); each step starts the liquid
 at T0. `B = 2274 K` reproduces μ_water(4 °C)/μ_water(20 °C) =
@@ -185,13 +185,28 @@ derivations, the ranges and what was not verified; the sources are listed
 
 - The molasses starts at 10 °C, about 5 °C above the air (Sharp, Kennedy &
   Rubinstein 2016), and mu0 is its viscosity at that temperature.
-- mu0 = 55 Pa s is the Broadfoot & Steindl (1980) correlation at 78 % dry
-  substance, 40 % purity and a shear rate of 10 s⁻¹. It is uncertain by
-  about a factor of 3 either way, mainly through the unknown solids content.
+- mu0 comes from the Broadfoot & Steindl (1980) correlation at a shear rate
+  of 10 s⁻¹. It is uncertain by about a factor of 3 either way, mainly
+  through the unknown solids content, so Step 4 has three viscosity
+  variants, selected with `MOLASSES_MU`: `low` (20 Pa s, 76 % dry
+  substance), `central` (55 Pa s, 78 %, the default) and `high` (200 Pa s,
+  80 %). All other properties, B included, are the same in the three.
 - B = 8.5e3 K (Ea ≈ 71 kJ/mol) reproduces the threefold viscosity increase
   from 10 to 0 °C reported by Sharp et al. (2016).
 - rho, Cp and kappa come from sugar-industry correlations at 80 % solids and
   10 °C; sigma (0.075 N/m) has no effect at this mesh.
+
+Run the three variants in separate case directories:
+
+```bash
+make run-step4 CASE_DIR=case-step4-low     MOLASSES_MU=low
+make run-step4 CASE_DIR=case-step4-central                    # MOLASSES_MU=central
+make run-step4 CASE_DIR=case-step4-high    MOLASSES_MU=high
+```
+
+`set_step.sh` records the variant as `viscosityVariant` in
+`constant/transportProperties` (`none` in Steps 1–3, which accept only
+`central`).
 
 `set_step.sh` edits entries of `constant/transportProperties`
 and `system/setFieldsDict` in place, keeps comments, fails without touching
@@ -274,6 +289,7 @@ make run-anim                 # Step 2 in case-anim-step2: 0–15 s, written eve
 make anim                     # -> case-anim-step2/postProcessing/anim/{frames/,animation.mp4,animation.gif}
 make readme-gif               # anim + copy the GIF to docs/media/dambreak-step2.gif
 make run-anim anim ANIM_STEP=4                                # another step
+make run-anim anim ANIM_STEP=4 MOLASSES_MU=high ANIM_DIR=case-anim-step4-high
 make anim ANIM_PANELS=flow,depth,froude ANIM_ARGS='--t-max 10' # other panels
 ```
 

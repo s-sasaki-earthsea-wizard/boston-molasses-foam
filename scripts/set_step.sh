@@ -3,7 +3,10 @@
 # set_step.sh - switch a case to a verification step
 #
 # Usage:
-#   scripts/set_step.sh <1|2|3|4> [CASE_DIR]      (CASE_DIR defaults to case)
+#   scripts/set_step.sh <1|2|3|4> [CASE_DIR] [VARIANT]
+#
+#   CASE_DIR defaults to case. VARIANT selects the molasses viscosity of
+#   Step 4: low, central (default) or high; Steps 1-3 accept only central.
 #
 # Sets the liquid properties and model switches in constant/transportProperties
 # and the initial liquid temperature (liquidT) in system/setFieldsDict.
@@ -27,7 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 usage() {
-    sed -n '3,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '3,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -35,12 +38,21 @@ usage() {
 
 STEP="${1:-}"
 CASE_DIR="${2:-${ROOT_DIR}/case}"
+VARIANT="${3:-central}"
 TP="${CASE_DIR}/constant/transportProperties"
 SFD="${CASE_DIR}/system/setFieldsDict"
 
 if [[ ! "${STEP}" =~ ^[1-4]$ ]]; then
     echo "Error: step must be 1, 2, 3 or 4 (got '${STEP}')" >&2
     usage 1
+fi
+if [[ ! "${VARIANT}" =~ ^(low|central|high)$ ]]; then
+    echo "Error: viscosity variant must be low, central or high (got '${VARIANT}')" >&2
+    usage 1
+fi
+if [[ "${STEP}" != 4 && "${VARIANT}" != central ]]; then
+    echo "Error: the viscosity variant '${VARIANT}' applies to Step 4 only" >&2
+    exit 1
 fi
 for f in "${TP}" "${SFD}"; do
     if [[ ! -f "${f}" ]]; then
@@ -68,8 +80,16 @@ WATER_TINIT=293.15    # [K]
 # "Molasses properties"; sources: README, "Molasses property sources".
 #   TINIT  about 5 degC above the air (Sharp, Kennedy & Rubinstein 2016);
 #          T0 = TINIT, so mu0 is the viscosity at the start
-#   mu0    Broadfoot & Steindl (1980) correlation at 78 % dry substance,
-#          40 % purity, shear rate 10 1/s, 10 degC (range 20-200 Pa s)
+#   mu0    Broadfoot & Steindl (1980) correlation at 40 % purity, shear
+#          rate 10 1/s and 10 degC; uncertain by ~x3 through the unknown dry
+#          substance, hence three variants:
+#            low      20 Pa s   76 % dry substance, 40 % purity
+#            central  55 Pa s   78 %, 40 % (reproduces Sharp et al.'s x3)
+#            high    200 Pa s   80 %, 35 %
+#          Final molasses measured by Shah (2017) near 81 Brix gives
+#          48-129 Pa s when moved from 30 to 10 degC with this B.
+#          B is the same in all three; it hardly matters until cooling is
+#          resolved
 #   B      x3 from 10 to 0 degC (Sharp et al. 2016), Ea ~ 71 kJ/mol
 #   rho    Rouillard (1985), Brix 80 at 10 degC
 #   Cp     Janovskii & Archangelskii (1928) / Rouillard (1985), 78-80 % dry
@@ -77,7 +97,9 @@ WATER_TINIT=293.15    # [K]
 #   kappa  Watson (1986), Brix 80 at 10 degC
 #   sigma  no effect at this mesh (capillary length ~2 mm)
 MOLASSES_RHO=1430     # [kg/m3]
-MOLASSES_MU0=55       # [Pa s] at T0
+MOLASSES_MU0_LOW=20       # [Pa s] at T0
+MOLASSES_MU0_CENTRAL=55   # [Pa s] at T0
+MOLASSES_MU0_HIGH=200     # [Pa s] at T0
 MOLASSES_CP=2050      # [J/kg/K]
 MOLASSES_KAPPA=0.31   # [W/m/K]
 MOLASSES_B=8.5e3      # [K]
@@ -108,8 +130,13 @@ case "${STEP}" in
         SOLVE_ENERGY=yes; T_DEPENDENT=yes
         ;;
     4)
-        LABEL="Boston molasses (high density and viscosity)"
-        RHO=${MOLASSES_RHO}; MU0=${MOLASSES_MU0}; CP=${MOLASSES_CP}
+        LABEL="Boston molasses (high density and viscosity), ${VARIANT} viscosity"
+        case "${VARIANT}" in
+            low)     MU0=${MOLASSES_MU0_LOW} ;;
+            central) MU0=${MOLASSES_MU0_CENTRAL} ;;
+            high)    MU0=${MOLASSES_MU0_HIGH} ;;
+        esac
+        RHO=${MOLASSES_RHO}; CP=${MOLASSES_CP}
         KAPPA=${MOLASSES_KAPPA}; B=${MOLASSES_B}; SIGMA=${MOLASSES_SIGMA}
         T0=${MOLASSES_T0}; TINIT=${MOLASSES_TINIT}
         SOLVE_ENERGY=yes; T_DEPENDENT=yes
@@ -215,6 +242,7 @@ cp "${SFD}" "${WORK_SFD}"
 
 TARGET="${TP}"
 set_entry "${WORK}" activeStep                            "${STEP}"
+set_entry "${WORK}" viscosityVariant                      "$([[ ${STEP} == 4 ]] && echo "${VARIANT}" || echo none)"
 set_entry "${WORK}" water/rho                             "${RHO}"
 set_entry "${WORK}" water/nu                              "${NU}"
 set_entry "${WORK}" water/Cp                              "${CP}"
