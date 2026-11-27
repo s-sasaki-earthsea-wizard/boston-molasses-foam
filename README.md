@@ -22,9 +22,10 @@ make run-step1        # builds the solver, mesh and initial fields if needed, th
 make help             # list all targets
 ```
 
-`run-stepN` depends on the solver binary, the mesh and the initialised `0/`
-as file targets, so a fresh checkout goes from `make run-step4` to results
-in one command (after the image is built).
+`run-stepN` depends on the solver binary and the mesh as file targets, and
+rebuilds the initialised `0/` after `set_step.sh` when needed, so a fresh
+checkout goes from `make run-step4` to results in one command (after the
+image is built).
 
 ## Make targets
 
@@ -35,7 +36,7 @@ in one command (after the image is built).
 | `build-solver`  | `wmake solver/interThermalFoam` → `build/bin/interThermalFoam`       |
 | `mesh`          | `blockMesh` (360 × 40 × 1 cells)                                     |
 | `init`          | Copy `0.orig` → `0`, then `setFields`                                |
-| `run-step1..4`  | `scripts/set_step.sh N`, remove previous results, run the solver     |
+| `run-step1..4`  | `set_step.sh N`, re-`init` if `liquidT` changed, clean, run solver   |
 | `run-anim`      | Copy the inputs to `ANIM_DIR`, set a dense output, run `ANIM_STEP`   |
 | `anim`          | Render frames, mp4 and GIF of `ANIM_DIR` (host: uv + ffmpeg)         |
 | `readme-gif`    | `anim` + copy the GIF to `docs/media/dambreak-stepN.gif`             |
@@ -95,7 +96,7 @@ services:
 │   ├── docker-compose.yml   # mounts the project root at /work
 │   └── entrypoint.sh        # replaces /openfoam/run (see notes)
 ├── scripts/
-│   ├── set_step.sh          # switch transportProperties to step 1..4
+│   ├── set_step.sh          # switch a case to step 1..4 (transportProperties, liquidT)
 │   ├── prepare_anim_case.sh # animation case: copy inputs, set endTime/writeInterval
 │   └── clean.sh
 ├── post/                    # frames and animations (runs on the host)
@@ -153,7 +154,9 @@ Per PIMPLE iteration: alpha (MULES) → T → mu(T) → U → p_rgh.
 ### Domain and boundary conditions
 
 x = 0–180 m, y = 0–20 m, z = 0–1 m (1 cell, `empty`), Δx = Δy = 0.5 m.
-Liquid block x, y ∈ [0, 12] m at 293.15 K; air at 277.15 K.
+Liquid block x, y ∈ [0, 12] m at `liquidT` = 293.15 K (Steps 1–3) or
+283.15 K (Step 4), set per step by `set_step.sh` in `system/setFieldsDict`;
+air at 277.15 K.
 
 | Patch          | U                             | p_rgh                    | alpha.water                | T                                |
 |----------------|-------------------------------|--------------------------|----------------------------|----------------------------------|
@@ -163,19 +166,74 @@ Liquid block x, y ∈ [0, 12] m at 293.15 K; air at 277.15 K.
 
 ## Verification steps
 
-| Step | Liquid   | Energy | mu(T) | rho [kg/m³] | mu0 [Pa s] | B [K]  | Cp [J/kg/K] | kappa [W/m/K] |
-|------|----------|--------|-------|-------------|------------|--------|-------------|---------------|
-| 1    | water    | off    | off   | 998.2       | 1.002e-3   | –      | 4182        | 0.598         |
-| 2    | water    | on     | off   | 998.2       | 1.002e-3   | –      | 4182        | 0.598         |
-| 3    | water    | on     | on    | 998.2       | 1.002e-3   | 2274   | 4182        | 0.598         |
-| 4    | molasses | on     | on    | 1400        | 5.0        | 1.0e4  | 2300        | 0.35          |
+| Step | Liquid   | Energy | mu(T) | T0 = initial T [K] | rho [kg/m³] | mu0 [Pa s] | B [K]  | Cp [J/kg/K] | kappa [W/m/K] |
+|------|----------|--------|-------|--------------------|-------------|------------|--------|-------------|---------------|
+| 1    | water    | off    | off   | 293.15             | 998.2       | 1.002e-3   | –      | 4182        | 0.598         |
+| 2    | water    | on     | off   | 293.15             | 998.2       | 1.002e-3   | –      | 4182        | 0.598         |
+| 3    | water    | on     | on    | 293.15             | 998.2       | 1.002e-3   | 2274   | 4182        | 0.598         |
+| 4    | molasses | on     | on    | 283.15             | 1430        | 20/55/200  | 8.5e3  | 2050        | 0.31          |
 
-`B = 2274 K` reproduces μ_water(4 °C)/μ_water(20 °C) = 1.5673/1.0016 mPa·s.
-**The molasses values are placeholders of plausible magnitude**
-(B = 1.0e4 K ≈ Ea 83 kJ/mol, μ(4 °C)/μ(20 °C) ≈ 7); replace them with
-literature or measured data in `scripts/set_step.sh` before drawing
-conclusions. `set_step.sh` edits entries in place, keeps comments and fails
-without touching the file if any entry is missing.
+T0 is the reference temperature of mu0 in mu(T); each step starts the liquid
+at T0. `B = 2274 K` reproduces μ_water(4 °C)/μ_water(20 °C) =
+1.5673/1.0016 mPa·s.
+
+The molasses values are literature estimates for cane final molasses: no
+source describes the 1919 molasses itself. The wiki page
+[Molasses properties](https://github.com/s-sasaki-earthsea-wizard/boston-molasses-foam/wiki/Molasses-properties) gives the
+derivations, the ranges and what was not verified; the sources are listed
+[below](#molasses-property-sources).
+
+- The molasses starts at 10 °C, about 5 °C above the air (Sharp, Kennedy &
+  Rubinstein 2016), and mu0 is its viscosity at that temperature.
+- mu0 comes from the Broadfoot & Steindl (1980) correlation at a shear rate
+  of 10 s⁻¹. It is uncertain by about a factor of 3 either way, mainly
+  through the unknown solids content, so Step 4 has three viscosity
+  variants, selected with `MOLASSES_MU`: `low` (20 Pa s, 76 % dry
+  substance), `central` (55 Pa s, 78 %, the default) and `high` (200 Pa s,
+  80 %). All other properties, B included, are the same in the three.
+- B = 8.5e3 K (Ea ≈ 71 kJ/mol) reproduces the threefold viscosity increase
+  from 10 to 0 °C reported by Sharp et al. (2016).
+- rho, Cp and kappa come from sugar-industry correlations at 80 % solids and
+  10 °C; sigma (0.075 N/m) has no effect at this mesh.
+
+Run the three variants in separate case directories:
+
+```bash
+make run-step4 CASE_DIR=case-step4-low     MOLASSES_MU=low
+make run-step4 CASE_DIR=case-step4-central                    # MOLASSES_MU=central
+make run-step4 CASE_DIR=case-step4-high    MOLASSES_MU=high
+```
+
+`set_step.sh` records the variant as `viscosityVariant` in
+`constant/transportProperties` (`none` in Steps 1–3, which accept only
+`central`).
+
+`set_step.sh` edits entries of `constant/transportProperties`
+and `system/setFieldsDict` in place, keeps comments, fails without touching
+either file if any entry is missing, and writes a file only when it changes.
+
+### Molasses property sources
+
+- **Viscosity:** Broadfoot, R. & Steindl, R. J. (1980). Solubility –
+  crystallisation characteristics of Queensland molasses. *Proc. Int. Soc.
+  Sugar Cane Technol.* 17, 2557–2581 (formula as given by Rackemann 2005 and
+  Shah 2017). Measurements of final molasses at 30 °C: Shah (2017).
+- **Temperature dependence of the viscosity, initial molasses temperature:**
+  Sharp, N., Kennedy, J. & Rubinstein, S. (2016). In a sea of sticky
+  molasses: The physics of the Boston Molasses Flood. APS Division of Fluid
+  Dynamics, abstract L27.00008; American Physical Society press release
+  "Molasses Creates a Stick Situation", 21 November 2016.
+- **Density, specific heat, thermal conductivity:** Rouillard (1985),
+  Janovskii & Archangelskii (1928) as modified by Rouillard (1985), and
+  Watson (1986), as given by Rackemann (2005).
+- **Air temperature on 15 January 1919:** NOAA Regional Climate Centers,
+  Applied Climate Information System (ACIS), threaded record "Boston Area".
+- Rackemann, D. W. (2005). *Evaluation of circulation and heat transfer in
+  calandria tubes of crystallisation vacuum pans.* Masters (Research) thesis,
+  James Cook University. <https://researchonline.jcu.edu.au/1322/>
+- Shah, S. (2017). *An investigation into the viscosity of C-massecuite
+  using a pipeline viscometer.* MSc Eng thesis, University of KwaZulu-Natal.
+  <http://hdl.handle.net/10413/18480>
 
 ## Implementation notes
 
@@ -211,6 +269,10 @@ run side by side), results on a CIFS share. Each step: 60 s simulated,
 ~2,700 time steps, ~120 s wall time, ~30 MB RAM, ~100 MB output (120
 compressed time directories).
 
+The Step 4 entries were obtained with the former placeholder molasses
+properties (rho = 1400 kg/m³, mu0 = 5 Pa s at 20 °C, B = 1.0e4 K, liquid at
+20 °C) and have not been re-run with the literature values yet.
+
 | Check                                   | Result                                      |
 |-----------------------------------------|---------------------------------------------|
 | Front speed 3–8 s, water (Step 1)       | ~20.5 m/s (Ritter 2√(gH) = 21.7 m/s)         |
@@ -227,6 +289,7 @@ make run-anim                 # Step 2 in case-anim-step2: 0–15 s, written eve
 make anim                     # -> case-anim-step2/postProcessing/anim/{frames/,animation.mp4,animation.gif}
 make readme-gif               # anim + copy the GIF to docs/media/dambreak-step2.gif
 make run-anim anim ANIM_STEP=4                                # another step
+make run-anim anim ANIM_STEP=4 MOLASSES_MU=high ANIM_DIR=case-anim-step4-high
 make anim ANIM_PANELS=flow,depth,froude ANIM_ARGS='--t-max 10' # other panels
 ```
 
@@ -277,8 +340,8 @@ front speed or shape is realistic.
 ## Known limitations
 
 - **Interfacial heat transfer is not resolved at Δ = 0.5 m.** The conductive
-  penetration depth √(κ t / ρCp) is ~1 mm (molasses) to ~4 mm (water) after
-  one minute, i.e. far below one cell; what exchange there is happens in the
+  penetration depth √(κ t / ρCp) is ~2.5 mm (molasses) to ~2.9 mm (water)
+  after one minute, i.e. far below one cell; what exchange there is happens in the
   mixed interface cells. In the reference runs the liquid cells
   (alpha > 0.99) cool by < 0.01 K within 60 s and mu(T) changes by ≤ 1 %, so
   Steps 2–4 verify the code path rather than predict cooling. Cooling-driven thickening (minutes
@@ -290,9 +353,10 @@ front speed or shape is realistic.
   velocity u₁. In the Step 2 animation run it is ~0.05 Pa, while a Manning
   estimate (n = 0.015) gives ~200–260 Pa at Re = uh/ν ~ 10⁷: the water front
   runs nearly frictionless (front speed 94 % of Ritter's 2√(gH)). For
-  molasses (μ0 = 5 Pa s) the same expression gives ~400 Pa, but it depends on
-  the mesh, because the laminar boundary layer √(ν t) (~6 cm after 1 s) is
-  not resolved by the 0.5 m cells.
+  molasses (former placeholder μ0 = 5 Pa s) it gave ~400 Pa, but it depends on
+  the mesh, because the laminar boundary layer √(ν t) (~6 cm after 1 s with
+  the placeholder, ~20 cm with μ0 = 55 Pa s) is not resolved by the 0.5 m
+  cells.
 - **Thin-layer stage under-resolved.** Viscosity matters mostly once the
   layer is thin (h < 1 m = 2 cells); bottom-graded or refined meshes are
   needed there.

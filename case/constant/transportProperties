@@ -22,6 +22,7 @@ FoamFile
 // replaced in place, so keep one "key value;" per line.
 
 activeStep      1;
+viscosityVariant none;              // Step 4 molasses viscosity: low, central, high
 
 phases          (water air);
 
