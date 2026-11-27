@@ -144,8 +144,9 @@ def evaluate(path: Path) -> CaseMetrics:
     mu_air = float(read_entry(tp, "rho", block="air")) * float(read_entry(tp, "nu", block="air"))
 
     names = list(info.times)
+    need_t = info.solve_energy or info.temperature_dependent
     with ThreadPoolExecutor(max_workers=READ_THREADS) as pool:
-        frames = list(pool.map(lambda n: load_frame(info, n, temperature=info.solve_energy or info.temperature_dependent), names))
+        frames = list(pool.map(lambda n: load_frame(info, n, temperature=need_t), names))
     times = np.array([f.time for f in frames])
     area = grid.dx * grid.dy
 
@@ -161,7 +162,11 @@ def evaluate(path: Path) -> CaseMetrics:
         arrival[f"{x_a:g}"] = float(times[reached][0]) if reached.any() else None
 
     def wall_shear(f: Frame) -> float:
-        """Largest first-cell wall shear under the liquid (h >= FRONT_DEPTH), as the solver's muEff."""
+        """Largest first-cell wall shear where h >= FRONT_DEPTH.
+
+        Mixture viscosity as in updateViscosity.H, without its T clipping and
+        muMax cap (neither is reached in these runs).
+        """
         mu_liquid = np.full(grid.nx, info.mu0_liquid)
         if info.temperature_dependent:
             mu_liquid = info.mu0_liquid * np.exp(b_visc * (1.0 / f.temperature[0] - 1.0 / t0_visc))
