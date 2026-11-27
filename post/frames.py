@@ -76,7 +76,7 @@ class Frame:
         ux: Velocity component along x [m/s].
         uy: Velocity component along y [m/s].
         temperature: Temperature [K], or None if not loaded.
-        dy: Cell height [m].
+        grid: Grid the fields live on (cell heights for the depth).
     """
 
     time: float
@@ -84,7 +84,7 @@ class Frame:
     ux: np.ndarray
     uy: np.ndarray
     temperature: np.ndarray | None
-    dy: float
+    grid: Grid2D
 
     @property
     def speed(self) -> np.ndarray:
@@ -92,13 +92,13 @@ class Frame:
 
     def depth(self) -> np.ndarray:
         """Liquid depth h(x) = sum of alpha dy over each column [m]."""
-        return self.alpha.sum(axis=0) * self.dy
+        return self.grid.column_sum(self.alpha)
 
     def mean_velocity(self) -> np.ndarray:
         """Liquid depth-averaged x-velocity [m/s]; NaN in dry columns."""
         h = self.depth()
         with np.errstate(invalid="ignore", divide="ignore"):
-            return np.where(h > 0, (self.alpha * self.ux).sum(axis=0) * self.dy / h, np.nan)
+            return np.where(h > 0, self.grid.column_sum(self.alpha * self.ux) / h, np.nan)
 
     def froude(self, g: float, min_depth: float) -> np.ndarray:
         """Froude number u/sqrt(g h); NaN where h < ``min_depth``."""
@@ -123,10 +123,10 @@ def load_case(path: Path) -> CaseInfo:
         step = None
 
     alpha0 = grid.to_2d(np.clip(read_internal_field(field_path(path / "0", LIQUID), n), 0.0, 1.0))
-    depth0 = alpha0.sum(axis=0) * grid.dy
+    depth0 = grid.column_sum(alpha0)
     h0 = float(depth0.max())
-    wet = depth0 > 0.5 * h0
-    x_dam = float(grid.x[wet].max() + grid.dx / 2)
+    wet = np.flatnonzero(depth0 > 0.5 * h0)
+    x_dam = float(grid.x_faces[wet.max() + 1])
 
     temp0 = grid.to_2d(read_internal_field(field_path(path / "0", "T"), n))
     t_liquid = float(temp0[alpha0 > 0.5].mean())
@@ -163,5 +163,5 @@ def load_frame(info: CaseInfo, time_name: str, temperature: bool = True) -> Fram
         ux=u[..., 0],
         uy=u[..., 1],
         temperature=grid.to_2d(read_internal_field(field_path(tdir, "T"), n)) if temperature else None,
-        dy=grid.dy,
+        grid=grid,
     )
