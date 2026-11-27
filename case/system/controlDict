@@ -23,7 +23,10 @@ startTime       0;
 
 stopAt          endTime;
 
-endTime         60;
+// The wave stage on the 180 m domain: the fronts of the faster liquids reach
+// the open end within 9-18 s. Later the layer is 1-2 cells thick and drains
+// over the outlet, which this mesh does not resolve (README, Reference runs)
+endTime         20;
 
 deltaT          1e-3;
 
