@@ -22,9 +22,10 @@ make run-step1        # builds the solver, mesh and initial fields if needed, th
 make help             # list all targets
 ```
 
-`run-stepN` depends on the solver binary, the mesh and the initialised `0/`
-as file targets, so a fresh checkout goes from `make run-step4` to results
-in one command (after the image is built).
+`run-stepN` depends on the solver binary and the mesh as file targets, and
+rebuilds the initialised `0/` after `set_step.sh` when needed, so a fresh
+checkout goes from `make run-step4` to results in one command (after the
+image is built).
 
 ## Make targets
 
@@ -35,7 +36,7 @@ in one command (after the image is built).
 | `build-solver`  | `wmake solver/interThermalFoam` → `build/bin/interThermalFoam`       |
 | `mesh`          | `blockMesh` (360 × 40 × 1 cells)                                     |
 | `init`          | Copy `0.orig` → `0`, then `setFields`                                |
-| `run-step1..4`  | `scripts/set_step.sh N`, remove previous results, run the solver     |
+| `run-step1..4`  | `set_step.sh N`, re-`init` if `liquidT` changed, clean, run solver   |
 | `run-anim`      | Copy the inputs to `ANIM_DIR`, set a dense output, run `ANIM_STEP`   |
 | `anim`          | Render frames, mp4 and GIF of `ANIM_DIR` (host: uv + ffmpeg)         |
 | `readme-gif`    | `anim` + copy the GIF to `docs/media/dambreak-stepN.gif`             |
@@ -95,7 +96,7 @@ services:
 │   ├── docker-compose.yml   # mounts the project root at /work
 │   └── entrypoint.sh        # replaces /openfoam/run (see notes)
 ├── scripts/
-│   ├── set_step.sh          # switch transportProperties to step 1..4
+│   ├── set_step.sh          # switch a case to step 1..4 (transportProperties, liquidT)
 │   ├── prepare_anim_case.sh # animation case: copy inputs, set endTime/writeInterval
 │   └── clean.sh
 ├── post/                    # frames and animations (runs on the host)
@@ -153,7 +154,8 @@ Per PIMPLE iteration: alpha (MULES) → T → mu(T) → U → p_rgh.
 ### Domain and boundary conditions
 
 x = 0–180 m, y = 0–20 m, z = 0–1 m (1 cell, `empty`), Δx = Δy = 0.5 m.
-Liquid block x, y ∈ [0, 12] m at 293.15 K; air at 277.15 K.
+Liquid block x, y ∈ [0, 12] m at `liquidT` = 293.15 K (`system/setFieldsDict`,
+set per step by `set_step.sh`); air at 277.15 K.
 
 | Patch          | U                             | p_rgh                    | alpha.water                | T                                |
 |----------------|-------------------------------|--------------------------|----------------------------|----------------------------------|
@@ -174,8 +176,9 @@ Liquid block x, y ∈ [0, 12] m at 293.15 K; air at 277.15 K.
 **The molasses values are placeholders of plausible magnitude**
 (B = 1.0e4 K ≈ Ea 83 kJ/mol, μ(4 °C)/μ(20 °C) ≈ 7); replace them with
 literature or measured data in `scripts/set_step.sh` before drawing
-conclusions. `set_step.sh` edits entries in place, keeps comments and fails
-without touching the file if any entry is missing.
+conclusions. `set_step.sh` edits entries of `constant/transportProperties`
+and `system/setFieldsDict` in place, keeps comments, fails without touching
+either file if any entry is missing, and writes a file only when it changes.
 
 ## Implementation notes
 
