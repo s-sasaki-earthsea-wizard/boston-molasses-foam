@@ -340,8 +340,8 @@ front speed or shape is realistic.
 ## Known limitations
 
 - **Interfacial heat transfer is not resolved at Δ = 0.5 m.** The conductive
-  penetration depth √(κ t / ρCp) is ~1 mm (molasses) to ~4 mm (water) after
-  one minute, i.e. far below one cell; what exchange there is happens in the
+  penetration depth √(κ t / ρCp) is ~2.5 mm (molasses) to ~2.9 mm (water)
+  after one minute, i.e. far below one cell; what exchange there is happens in the
   mixed interface cells. In the reference runs the liquid cells
   (alpha > 0.99) cool by < 0.01 K within 60 s and mu(T) changes by ≤ 1 %, so
   Steps 2–4 verify the code path rather than predict cooling. Cooling-driven thickening (minutes
