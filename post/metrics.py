@@ -44,6 +44,9 @@ OUTLET_ALPHA = 1e-3  # outflow starts when the last column holds more liquid
 CORE_ALPHA = 0.99  # cells counted as liquid for the cooling
 OUTLET_MARGIN = 1.0  # [m] plotted fronts end this close to the outlet
 READ_THREADS = 16  # concurrent reads (network shares are latency-bound)
+FILM_MARGIN = 20.0  # [m] film check: columns this far from the wall and the front
+FILM_SLOPE_HALF = 10.0  # [m] film check: half window of the surface-slope fit
+FILM_MIN_SPEED = 1e-4  # [m/s] film check: columns at rest are left out
 
 _ALPHA = re.compile(r"Min\(alpha\.water\) = (\S+)\s+Max\(alpha\.water\) = (\S+)")
 _T = re.compile(r"T min/max = (\S+), (\S+)")
@@ -63,6 +66,39 @@ class LogStats:
     alpha_max: float | None
     t_min: float | None
     t_max: float | None
+
+
+@dataclass
+class FilmCheck:
+    """Body of the current against a viscous film of the same depth and flux.
+
+    A lubrication flow has the half-parabolic profile
+    u(y) = 3/2 ubar (2 y/h - y^2/h^2), so h and the mean velocity ubar fix the
+    wall shear 3 mu ubar / h and the surface velocity 3/2 ubar; its flux is
+    -g h^3 (dh/dx) / (3 nu). Each ratio is the median over the body columns:
+    h >= FRONT_DEPTH, at least FILM_MARGIN from the wall and the front, and
+    |ubar| > FILM_MIN_SPEED. NaN where there are no such columns.
+
+    Attributes:
+        columns: Number of body columns.
+        depth: Median depth h [m].
+        cells: Median number of cells over the depth.
+        reynolds: Median ubar h / nu.
+        wall_shear: First-cell shear u1 / (dy1/2) against 3 ubar / h.
+        surface_velocity: Velocity of the top liquid cell (alpha >= 0.5)
+            against 3/2 ubar.
+        flux: Flux sum(alpha u dy) against -g h^3 (dh/dx) / (3 nu), with dh/dx
+            fitted over +-FILM_SLOPE_HALF; negative where the flux runs up
+            the fitted slope.
+    """
+
+    columns: int
+    depth: float
+    cells: float
+    reynolds: float
+    wall_shear: float
+    surface_velocity: float
+    flux: float
 
 
 @dataclass
@@ -89,6 +125,7 @@ class CaseMetrics:
     growth_exponent: float
     wall_depth_end: float
     huppert_wall_depth_end: float
+    film: dict[str, FilmCheck]
     profiles: dict[str, list[float]] = field(repr=False)
     profile_x: list[float] = field(repr=False)
     outflow_start: float | None
@@ -149,6 +186,42 @@ def _index(times: np.ndarray, t: float) -> int | None:
 def _at(times: np.ndarray, values: np.ndarray, t: float) -> float:
     i = _index(times, t)
     return float(values[i]) if i is not None else float("nan")
+
+
+def film_check(frame: Frame, info: CaseInfo) -> FilmCheck:
+    """Compare the body of the current with a viscous film (see FilmCheck)."""
+    grid = info.grid
+    nu = info.mu0_liquid / info.rho_liquid
+    h = frame.depth()
+    q = grid.column_sum(frame.alpha * frame.ux)
+    wet = np.flatnonzero(h >= FRONT_DEPTH)
+    if wet.size == 0:
+        return FilmCheck(0, *([float("nan")] * 6))
+    x_front = grid.x[wet.max()]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        moving = np.abs(np.where(h > 0, q / h, 0.0)) > FILM_MIN_SPEED
+    body = ((grid.x >= info.x_wall + FILM_MARGIN) & (grid.x <= x_front - FILM_MARGIN)
+            & (h >= FRONT_DEPTH) & moving)
+    cols = np.flatnonzero(body)
+    if cols.size == 0:
+        return FilmCheck(0, *([float("nan")] * 6))
+    hb = h[cols]
+    ubar = q[cols] / hb
+    liquid = frame.alpha[:, cols] >= 0.5
+    top = grid.ny - 1 - np.argmax(liquid[::-1], axis=0)
+    u_surface = frame.ux[top, cols]
+    slope = np.array([np.polyfit(grid.x[w], h[w], 1)[0] for w in
+                      (np.abs(grid.x - grid.x[i]) <= FILM_SLOPE_HALF for i in cols)])
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return FilmCheck(
+            columns=int(cols.size),
+            depth=float(np.median(hb)),
+            cells=float(np.median(np.searchsorted(grid.y_faces, hb))),
+            reynolds=float(np.median(np.abs(ubar) * hb / nu)),
+            wall_shear=float(np.median(frame.ux[0, cols] / (grid.dy_cells[0] / 2.0) / (3.0 * ubar / hb))),
+            surface_velocity=float(np.median(u_surface / (1.5 * ubar))),
+            flux=float(np.median(q[cols] / (-info.g * hb**3 * slope / (3.0 * nu)))),
+        )
 
 
 def growth_exponent(times: np.ndarray, front: np.ndarray, x_wall: float, x_end: float) -> float:
@@ -262,6 +335,8 @@ def evaluate(
         growth_exponent=growth_exponent(times, front, info.x_wall, x_end),
         wall_depth_end=float(wall_depth),
         huppert_wall_depth_end=float(huppert_wall.depth[0]),
+        film={f"{t:g}": film_check(frames[i], info)
+              for t in front_at if (i := _index(times, t)) is not None},
         profiles=profiles,
         profile_x=grid.x.tolist(),
         outflow_start=outflow_start,
@@ -283,6 +358,12 @@ def case_label(m: CaseMetrics, with_mesh: bool) -> str:
     else:
         label = f"Step {m.step} (water)"
     return f"{label}, {m.mesh}" if with_mesh else label
+
+
+def _film(c: FilmCheck | None) -> str:
+    if c is None or c.columns == 0:
+        return "–"
+    return f"{c.reynolds:.2g}, {c.flux:.2f}, {c.wall_shear:.2f}, {c.surface_velocity:.2f}"
 
 
 def _fmt(value: float | None, spec: str) -> str:
@@ -326,6 +407,9 @@ def table(results: list[CaseMetrics]) -> str:
             ("depth at the wall at the end, Huppert [m]",
              [f"{m.wall_depth_end:.2f}, {m.huppert_wall_depth_end:.2f}" for m in results]),
         ]
+        for key in results[0].front_at:
+            rows.append((f"film at t = {key} s: Re, q/q_lub, τ₁/(3μū/h), u_s/(3ū/2) (all 1 for a viscous film)",
+                         [_film(m.film.get(key)) for m in results]))
     rows += [
         ("outflow starts [s]", [_fmt(m.outflow_start, "g") for m in results]),
         ("largest deviation of V from V₀ before outflow [m²]", [_fmt(m.volume_dev, ".1e") for m in results]),
