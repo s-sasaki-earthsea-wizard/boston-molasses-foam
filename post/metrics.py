@@ -90,6 +90,10 @@ class FilmCheck:
         flux: Flux sum(alpha u dy) against -g h^3 (dh/dx) / (3 nu), with dh/dx
             fitted over +-FILM_SLOPE_HALF; negative where the flux runs up
             the fitted slope.
+        bed_alpha: Median alpha of the first cell; 1 where the liquid wets the
+            bottom.
+        bed_air: Median air thickness sum((1 - alpha) dy) [m] below the top
+            liquid cell, i.e. air trapped under or inside the current.
     """
 
     columns: int
@@ -99,6 +103,8 @@ class FilmCheck:
     wall_shear: float
     surface_velocity: float
     flux: float
+    bed_alpha: float
+    bed_air: float
 
 
 @dataclass
@@ -196,7 +202,7 @@ def film_check(frame: Frame, info: CaseInfo) -> FilmCheck:
     q = grid.column_sum(frame.alpha * frame.ux)
     wet = np.flatnonzero(h >= FRONT_DEPTH)
     if wet.size == 0:
-        return FilmCheck(0, *([float("nan")] * 6))
+        return FilmCheck(0, *([float("nan")] * 8))
     x_front = grid.x[wet.max()]
     with np.errstate(invalid="ignore", divide="ignore"):
         moving = np.abs(np.where(h > 0, q / h, 0.0)) > FILM_MIN_SPEED
@@ -204,12 +210,14 @@ def film_check(frame: Frame, info: CaseInfo) -> FilmCheck:
             & (h >= FRONT_DEPTH) & moving)
     cols = np.flatnonzero(body)
     if cols.size == 0:
-        return FilmCheck(0, *([float("nan")] * 6))
+        return FilmCheck(0, *([float("nan")] * 8))
     hb = h[cols]
     ubar = q[cols] / hb
     liquid = frame.alpha[:, cols] >= 0.5
     top = grid.ny - 1 - np.argmax(liquid[::-1], axis=0)
     u_surface = frame.ux[top, cols]
+    below_top = np.arange(grid.ny)[:, None] < top[None, :]
+    air = ((1.0 - frame.alpha[:, cols]) * below_top * grid.dy_cells[:, None]).sum(axis=0)
     slope = np.array([np.polyfit(grid.x[w], h[w], 1)[0] for w in
                       (np.abs(grid.x - grid.x[i]) <= FILM_SLOPE_HALF for i in cols)])
     with np.errstate(invalid="ignore", divide="ignore"):
@@ -221,6 +229,8 @@ def film_check(frame: Frame, info: CaseInfo) -> FilmCheck:
             wall_shear=float(np.median(frame.ux[0, cols] / (grid.dy_cells[0] / 2.0) / (3.0 * ubar / hb))),
             surface_velocity=float(np.median(u_surface / (1.5 * ubar))),
             flux=float(np.median(q[cols] / (-info.g * hb**3 * slope / (3.0 * nu)))),
+            bed_alpha=float(np.median(frame.alpha[0, cols])),
+            bed_air=float(np.median(air)),
         )
 
 
@@ -366,6 +376,12 @@ def _film(c: FilmCheck | None) -> str:
     return f"{c.reynolds:.2g}, {c.flux:.2f}, {c.wall_shear:.2f}, {c.surface_velocity:.2f}"
 
 
+def _bed(c: FilmCheck | None) -> str:
+    if c is None or c.columns == 0:
+        return "–"
+    return f"{c.bed_alpha:.2f}, {100.0 * c.bed_air:.1f}"
+
+
 def _fmt(value: float | None, spec: str) -> str:
     if value is None or (isinstance(value, float) and np.isnan(value)):
         return "–"
@@ -410,6 +426,9 @@ def table(results: list[CaseMetrics]) -> str:
         for key in results[0].front_at:
             rows.append((f"film at t = {key} s: Re, q/q_lub, τ₁/(3μū/h), u_s/(3ū/2) (all 1 for a viscous film)",
                          [_film(m.film.get(key)) for m in results]))
+        for key in results[0].front_at:
+            rows.append((f"bed at t = {key} s: first-cell α, air below the surface [cm] (1, 0 when wetted)",
+                         [_bed(m.film.get(key)) for m in results]))
     rows += [
         ("outflow starts [s]", [_fmt(m.outflow_start, "g") for m in results]),
         ("largest deviation of V from V₀ before outflow [m²]", [_fmt(m.volume_dev, ".1e") for m in results]),
