@@ -17,8 +17,9 @@ case/VTK/
 case/dynamicCode/
 case/*.foam
 
-# Extra run directories (make run-stepN CASE_DIR=case-..., make run-anim)
-case-*/
+# Extra run directories (make run-stepN CASE_DIR=case-..., make run-anim).
+# No trailing slash, so that symlinks to another disk are ignored as well
+/case-*
 
 # Python environment of post/ (uv)
 .venv/
