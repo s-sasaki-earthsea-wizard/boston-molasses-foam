@@ -288,7 +288,7 @@ def plot_fronts(results: list[CaseMetrics], infos: list[CaseInfo], out: Path) ->
     t_ref = np.linspace(0.0, t_end, 201)
     x_end = info.grid.extent[1]
     ax.plot(t_ref, info.x_dam + info.front_speed * t_ref, color=pp.REFERENCE, lw=1.0, ls=pp.DASH,
-            label="Ritter front x_dam + 2√(gH) t (frictionless)")
+            label=f"Ritter front {info.x_dam:g} m + 2√(gH) t (frictionless)")
     for m, inf in zip(results, infos):
         style: dict = {"lw": 2.0}
         if m.step == 4:
