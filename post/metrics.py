@@ -602,7 +602,9 @@ def plot_profiles(
     handles, _ = axes[0].get_legend_handles_labels()
     if with_huppert:
         handles.append(_huppert_handle(1.2))
-    axes[0].legend(handles=handles, loc="upper center", fontsize=7.5, ncols=2)
+    # Above the first panel: inside, it covered the deep early profiles
+    axes[0].legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, 1.02), fontsize=7.5,
+                   ncols=2, frameon=False)
     _save(fig, results, out)
 
 
