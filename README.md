@@ -45,12 +45,38 @@ in one command (after the image is built).
 Container commands are wrapped as
 `docker compose -f docker/docker-compose.yml run --rm -T openfoam ...`,
 running as the host UID/GID so that results stay owned by the host user.
+If the local file `docker/docker-compose.override.yml` exists, it is added
+as a second `-f` (see [Results on another disk](#results-on-another-disk)).
 
 `CASE_DIR` can be overridden to keep runs side by side, e.g.
 
 ```bash
 cp -r case case-step4          # (without results)
 make run-step4 CASE_DIR=case-step4
+```
+
+### Results on another disk
+
+To keep results on a larger disk (e.g. a NAS), make the `case-*` directory a
+symlink before the first run, and mount the symlink's target at the same path
+in the container with a local `docker/docker-compose.override.yml`. Keep that
+file out of version control (e.g. in `.git/info/exclude`). The Makefile adds
+it to every `docker compose` call when it exists, because `docker compose -f`
+does not load an override file by itself. The same works for `ANIM_DIR`.
+
+```bash
+mkdir -p /mnt/storage/boston-molasses-foam/case-step4
+ln -s /mnt/storage/boston-molasses-foam/case-step4 case-step4
+cp -rp case/0.orig case/system case/constant case-step4/
+make run-step4 CASE_DIR=case-step4
+```
+
+```yaml
+# docker/docker-compose.override.yml (local only; use absolute paths)
+services:
+  openfoam:
+    volumes:
+      - /mnt/storage/boston-molasses-foam:/mnt/storage/boston-molasses-foam
 ```
 
 ## Layout
