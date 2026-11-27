@@ -23,9 +23,9 @@ startTime       0;
 
 stopAt          endTime;
 
-// The wave stage on the 180 m domain: the fronts of the faster liquids reach
-// the open end within 9-18 s. Later the layer is 1-2 cells thick and drains
-// over the outlet, which this mesh does not resolve (README, Reference runs)
+// endTime and writeInterval are switched by scripts/set_step.sh <1-5>
+// (Steps 1-4: 20 s / 0.5 s, the wave stage on the 180 m domain; Step 5:
+// 120 s / 1 s); END_TIME and WRITE_INTERVAL override them
 endTime         20;
 
 deltaT          1e-3;

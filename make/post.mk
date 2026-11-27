@@ -37,8 +37,9 @@ need_centres = $(if $(wildcard $(1)/0/C.gz $(1)/0/C),,$(call foam,$(call centres
 .PHONY: run-anim anim readme-gif metrics readme-fronts
 
 run-anim: ## Run step ANIM_STEP in ANIM_DIR with dense output (default: Step 2, 15 s, every 0.04 s)
-	bash scripts/prepare_anim_case.sh $(CASE_DIR) $(ANIM_DIR) $(ANIM_END) $(ANIM_WRITE)
-	$(MAKE) --no-print-directory run-step$(ANIM_STEP) CASE_DIR=$(ANIM_DIR)
+	bash scripts/prepare_anim_case.sh $(CASE_DIR) $(ANIM_DIR)
+	$(MAKE) --no-print-directory run-step$(ANIM_STEP) CASE_DIR=$(ANIM_DIR) \
+		END_TIME=$(ANIM_END) WRITE_INTERVAL=$(ANIM_WRITE)
 
 anim: ## Render frames, mp4 and GIF of ANIM_DIR into ANIM_DIR/postProcessing/anim
 	@test -f $(ANIM_DIR)/0/.stamp || { echo "Error: $(ANIM_DIR) has no results; run 'make run-anim' first" >&2; exit 1; }
