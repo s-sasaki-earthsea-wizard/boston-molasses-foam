@@ -63,17 +63,27 @@ WATER_SIGMA=0.0728    # [N/m]
 WATER_T0=293.15       # [K]
 WATER_TINIT=293.15    # [K]
 
-# Cane molasses (Step 4). PLACEHOLDER values of plausible magnitude, to be
-# replaced by literature/measured data (mu0 and B dominate the result):
-#   B = Ea/R = 1.0e4 K (Ea ~ 83 kJ/mol) -> mu(4 degC)/mu(20 degC) ~ 7
-MOLASSES_RHO=1400     # [kg/m3]
-MOLASSES_MU0=5.0      # [Pa s] at T0
-MOLASSES_CP=2300      # [J/kg/K]
-MOLASSES_KAPPA=0.35   # [W/m/K]
-MOLASSES_B=1.0e4      # [K]
+# Cane final molasses (Step 4). Literature estimates: no source describes the
+# 1919 molasses itself. Derivations, ranges and caveats: wiki page
+# "Molasses properties"; sources: README, "Molasses property sources".
+#   TINIT  about 5 degC above the air (Sharp, Kennedy & Rubinstein 2016);
+#          T0 = TINIT, so mu0 is the viscosity at the start
+#   mu0    Broadfoot & Steindl (1980) correlation at 78 % dry substance,
+#          40 % purity, shear rate 10 1/s, 10 degC (range 20-200 Pa s)
+#   B      x3 from 10 to 0 degC (Sharp et al. 2016), Ea ~ 71 kJ/mol
+#   rho    Rouillard (1985), Brix 80 at 10 degC
+#   Cp     Janovskii & Archangelskii (1928) / Rouillard (1985), 78-80 % dry
+#          substance at 10 degC
+#   kappa  Watson (1986), Brix 80 at 10 degC
+#   sigma  no effect at this mesh (capillary length ~2 mm)
+MOLASSES_RHO=1430     # [kg/m3]
+MOLASSES_MU0=55       # [Pa s] at T0
+MOLASSES_CP=2050      # [J/kg/K]
+MOLASSES_KAPPA=0.31   # [W/m/K]
+MOLASSES_B=8.5e3      # [K]
 MOLASSES_SIGMA=0.075  # [N/m]
-MOLASSES_T0=293.15    # [K]
-MOLASSES_TINIT=293.15 # [K]
+MOLASSES_T0=283.15    # [K]
+MOLASSES_TINIT=283.15 # [K]
 
 case "${STEP}" in
     1)

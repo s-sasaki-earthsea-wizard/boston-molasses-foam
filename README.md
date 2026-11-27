@@ -154,8 +154,9 @@ Per PIMPLE iteration: alpha (MULES) → T → mu(T) → U → p_rgh.
 ### Domain and boundary conditions
 
 x = 0–180 m, y = 0–20 m, z = 0–1 m (1 cell, `empty`), Δx = Δy = 0.5 m.
-Liquid block x, y ∈ [0, 12] m at `liquidT` = 293.15 K (`system/setFieldsDict`,
-set per step by `set_step.sh`); air at 277.15 K.
+Liquid block x, y ∈ [0, 12] m at `liquidT` = 293.15 K (Steps 1–3) or
+283.15 K (Step 4), set per step by `set_step.sh` in `system/setFieldsDict`;
+air at 277.15 K.
 
 | Patch          | U                             | p_rgh                    | alpha.water                | T                                |
 |----------------|-------------------------------|--------------------------|----------------------------|----------------------------------|
@@ -165,20 +166,59 @@ set per step by `set_step.sh`); air at 277.15 K.
 
 ## Verification steps
 
-| Step | Liquid   | Energy | mu(T) | rho [kg/m³] | mu0 [Pa s] | B [K]  | Cp [J/kg/K] | kappa [W/m/K] |
-|------|----------|--------|-------|-------------|------------|--------|-------------|---------------|
-| 1    | water    | off    | off   | 998.2       | 1.002e-3   | –      | 4182        | 0.598         |
-| 2    | water    | on     | off   | 998.2       | 1.002e-3   | –      | 4182        | 0.598         |
-| 3    | water    | on     | on    | 998.2       | 1.002e-3   | 2274   | 4182        | 0.598         |
-| 4    | molasses | on     | on    | 1400        | 5.0        | 1.0e4  | 2300        | 0.35          |
+| Step | Liquid   | Energy | mu(T) | T0 = initial T [K] | rho [kg/m³] | mu0 [Pa s] | B [K]  | Cp [J/kg/K] | kappa [W/m/K] |
+|------|----------|--------|-------|--------------------|-------------|------------|--------|-------------|---------------|
+| 1    | water    | off    | off   | 293.15             | 998.2       | 1.002e-3   | –      | 4182        | 0.598         |
+| 2    | water    | on     | off   | 293.15             | 998.2       | 1.002e-3   | –      | 4182        | 0.598         |
+| 3    | water    | on     | on    | 293.15             | 998.2       | 1.002e-3   | 2274   | 4182        | 0.598         |
+| 4    | molasses | on     | on    | 283.15             | 1430        | 55         | 8.5e3  | 2050        | 0.31          |
 
-`B = 2274 K` reproduces μ_water(4 °C)/μ_water(20 °C) = 1.5673/1.0016 mPa·s.
-**The molasses values are placeholders of plausible magnitude**
-(B = 1.0e4 K ≈ Ea 83 kJ/mol, μ(4 °C)/μ(20 °C) ≈ 7); replace them with
-literature or measured data in `scripts/set_step.sh` before drawing
-conclusions. `set_step.sh` edits entries of `constant/transportProperties`
+T0 is the reference temperature of mu0 in mu(T); each step starts the liquid
+at T0. `B = 2274 K` reproduces μ_water(4 °C)/μ_water(20 °C) =
+1.5673/1.0016 mPa·s.
+
+The molasses values are literature estimates for cane final molasses: no
+source describes the 1919 molasses itself. The wiki page
+[Molasses properties](https://github.com/s-sasaki-earthsea-wizard/boston-molasses-foam/wiki/Molasses-properties) gives the
+derivations, the ranges and what was not verified; the sources are listed
+[below](#molasses-property-sources).
+
+- The molasses starts at 10 °C, about 5 °C above the air (Sharp, Kennedy &
+  Rubinstein 2016), and mu0 is its viscosity at that temperature.
+- mu0 = 55 Pa s is the Broadfoot & Steindl (1980) correlation at 78 % dry
+  substance, 40 % purity and a shear rate of 10 s⁻¹. It is uncertain by
+  about a factor of 3 either way, mainly through the unknown solids content.
+- B = 8.5e3 K (Ea ≈ 71 kJ/mol) reproduces the threefold viscosity increase
+  from 10 to 0 °C reported by Sharp et al. (2016).
+- rho, Cp and kappa come from sugar-industry correlations at 80 % solids and
+  10 °C; sigma (0.075 N/m) has no effect at this mesh.
+
+`set_step.sh` edits entries of `constant/transportProperties`
 and `system/setFieldsDict` in place, keeps comments, fails without touching
 either file if any entry is missing, and writes a file only when it changes.
+
+### Molasses property sources
+
+- **Viscosity:** Broadfoot, R. & Steindl, R. J. (1980). Solubility –
+  crystallisation characteristics of Queensland molasses. *Proc. Int. Soc.
+  Sugar Cane Technol.* 17, 2557–2581 (formula as given by Rackemann 2005 and
+  Shah 2017). Measurements of final molasses at 30 °C: Shah (2017).
+- **Temperature dependence of the viscosity, initial molasses temperature:**
+  Sharp, N., Kennedy, J. & Rubinstein, S. (2016). In a sea of sticky
+  molasses: The physics of the Boston Molasses Flood. APS Division of Fluid
+  Dynamics, abstract L27.00008; American Physical Society press release
+  "Molasses Creates a Stick Situation", 21 November 2016.
+- **Density, specific heat, thermal conductivity:** Rouillard (1985),
+  Janovskii & Archangelskii (1928) as modified by Rouillard (1985), and
+  Watson (1986), as given by Rackemann (2005).
+- **Air temperature on 15 January 1919:** NOAA Regional Climate Centers,
+  Applied Climate Information System (ACIS), threaded record "Boston Area".
+- Rackemann, D. W. (2005). *Evaluation of circulation and heat transfer in
+  calandria tubes of crystallisation vacuum pans.* Masters (Research) thesis,
+  James Cook University. <https://researchonline.jcu.edu.au/1322/>
+- Shah, S. (2017). *An investigation into the viscosity of C-massecuite
+  using a pipeline viscometer.* MSc Eng thesis, University of KwaZulu-Natal.
+  <http://hdl.handle.net/10413/18480>
 
 ## Implementation notes
 
@@ -213,6 +253,10 @@ OpenFOAM v2312 container on a 16-core Linux host, each run serial (Steps 1–4
 run side by side), results on a CIFS share. Each step: 60 s simulated,
 ~2,700 time steps, ~120 s wall time, ~30 MB RAM, ~100 MB output (120
 compressed time directories).
+
+The Step 4 entries were obtained with the former placeholder molasses
+properties (rho = 1400 kg/m³, mu0 = 5 Pa s at 20 °C, B = 1.0e4 K, liquid at
+20 °C) and have not been re-run with the literature values yet.
 
 | Check                                   | Result                                      |
 |-----------------------------------------|---------------------------------------------|
@@ -293,9 +337,10 @@ front speed or shape is realistic.
   velocity u₁. In the Step 2 animation run it is ~0.05 Pa, while a Manning
   estimate (n = 0.015) gives ~200–260 Pa at Re = uh/ν ~ 10⁷: the water front
   runs nearly frictionless (front speed 94 % of Ritter's 2√(gH)). For
-  molasses (μ0 = 5 Pa s) the same expression gives ~400 Pa, but it depends on
-  the mesh, because the laminar boundary layer √(ν t) (~6 cm after 1 s) is
-  not resolved by the 0.5 m cells.
+  molasses (former placeholder μ0 = 5 Pa s) it gave ~400 Pa, but it depends on
+  the mesh, because the laminar boundary layer √(ν t) (~6 cm after 1 s with
+  the placeholder, ~20 cm with μ0 = 55 Pa s) is not resolved by the 0.5 m
+  cells.
 - **Thin-layer stage under-resolved.** Viscosity matters mostly once the
   layer is thin (h < 1 m = 2 cells); bottom-graded or refined meshes are
   needed there.
