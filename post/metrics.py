@@ -486,7 +486,7 @@ def plot_profiles(
             if key not in m.profiles:
                 continue
             ax.plot(m.profile_x, m.profiles[key], label=case_label(m, with_mesh), **style)
-            if with_huppert and m.step is not None and m.step >= 4 and m.mu0 not in drawn:
+            if with_huppert and t > 0 and m.step is not None and m.step >= 4 and m.mu0 not in drawn:
                 drawn.add(m.mu0)
                 x = np.linspace(inf.x_wall, x_end, 2001)
                 ax.plot(x, huppert(x, t, m.volume0, inf.g, m.mu0 / m.rho, inf.x_wall).depth,
