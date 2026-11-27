@@ -21,7 +21,10 @@ solvers
     {
         nAlphaCorr      2;
         nAlphaSubCycles 1;
-        cAlpha          1;
+        // Interface compression: cAlpha 1 makes the thin (1-2 cell),
+        // fast (~20 m/s) layer ripple at the grid scale (wavelength ~10-20
+        // cells, not mesh-converged); 0.5 removes them, mean flow unchanged
+        cAlpha          0.5;
 
         MULESCorr       yes;
         nLimiterIter    3;

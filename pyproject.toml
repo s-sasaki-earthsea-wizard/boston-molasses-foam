@@ -1,0 +1,18 @@
+[project]
+name = "boston-molasses-post"
+version = "0.1.0"
+description = "Post-processing and animations for the Boston molasses flood 2D OpenFOAM case"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "matplotlib>=3.8",
+    "numpy>=1.26",
+]
+
+[tool.uv]
+# post/ is run as a module from the project root (python -m post.animate);
+# nothing is built or installed
+package = false
+# The project lives on a network share; the uv cache does not, so
+# hardlinks are not possible
+link-mode = "copy"

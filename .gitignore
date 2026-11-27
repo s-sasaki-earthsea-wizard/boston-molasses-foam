@@ -17,5 +17,9 @@ case/VTK/
 case/dynamicCode/
 case/*.foam
 
-# Extra run directories (make run-stepN CASE_DIR=case-...)
+# Extra run directories (make run-stepN CASE_DIR=case-..., make run-anim)
 case-*/
+
+# Python environment of post/ (uv)
+.venv/
+__pycache__/
