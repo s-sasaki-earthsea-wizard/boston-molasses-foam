@@ -128,3 +128,15 @@ def test_fronts_stop_at_their_own_outlet(tmp_path: Path, figures: list, order: t
     assert ax.get_ylim()[1] >= 120.0
     outlets = sorted(line.get_ydata()[0] for line in ax.get_lines() if line.get_label().startswith("_"))
     assert outlets == [40.0, 120.0]
+
+
+def test_huppert_front_starts_at_huppert_from(tmp_path: Path, figures: list) -> None:
+    case = _front_case(tmp_path / "case", 120.0, {"0": 10.0, "300": 60.0, "600": 100.0}, step=5)
+    metrics.plot_fronts([evaluate(case)], [load_case(case)], tmp_path / "fronts.svg", with_huppert=True)
+    (ax,) = figures[0].axes
+    huppert_lines = [line for line in ax.get_lines()
+                     if line.get_label().startswith("_") and np.size(line.get_xdata()) > 2]
+    assert len(huppert_lines) == 1
+    t = huppert_lines[0].get_xdata()
+    assert t[0] == pytest.approx(metrics.HUPPERT_FROM)
+    assert t[-1] == pytest.approx(600.0)

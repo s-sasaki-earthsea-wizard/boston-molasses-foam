@@ -613,6 +613,8 @@ def plot_fronts(
     info = infos[0]
     t_end = max(m.times[1] for m in results)
     t_ref = np.linspace(0.0, t_end, 201)
+    # Denser early on, where Huppert's front rises fastest
+    t_h = np.geomspace(HUPPERT_FROM, t_end, 201) if t_end > HUPPERT_FROM else np.empty(0)
     outlets = sorted({inf.grid.extent[1] for inf in infos})
     ax.plot(t_ref, info.x_dam + info.front_speed * t_ref, color=pp.REFERENCE, lw=1.0, ls=pp.DASH,
             label=f"Ritter front {info.x_dam:g} m + 2√(gH) t (frictionless)")
@@ -627,7 +629,6 @@ def plot_fronts(
         ax.plot(t[:stop], x[:stop], label=case_label(m, with_mesh), **style)
         if with_huppert and m.step is not None and m.step >= 4 and m.mu0 not in drawn:
             drawn.add(m.mu0)
-            t_h = t_ref[t_ref >= HUPPERT_FROM]
             ax.plot(t_h, inf.x_wall + huppert_front(t_h, m.volume0, inf.g, m.mu0 / m.rho, FRONT_DEPTH),
                     color=style["color"], lw=1.2, ls=_HUPPERT_LS)
     for x_end in outlets:
