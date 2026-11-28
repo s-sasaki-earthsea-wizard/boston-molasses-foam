@@ -34,5 +34,5 @@ clean: ## Remove result time directories, solver logs and postProcessing
 clean-all: ## clean + mesh, initialised 0/, solver binary and wmake objects
 	bash scripts/clean.sh --all $(CASE_DIR)
 
-test: ## Run the tests of post/ and scripts/ (host: uv + pytest; no OpenFOAM)
+test: ## Run the tests of post/, cooling/ and scripts/ (host: uv + pytest; no OpenFOAM)
 	uv run python -m pytest

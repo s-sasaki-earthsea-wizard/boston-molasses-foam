@@ -96,7 +96,7 @@ services:
 ```text
 .
 ├── Makefile                 # includes make/*.mk, help/clean/test targets
-├── pyproject.toml, uv.lock # Python environment of post/ (uv)
+├── pyproject.toml, uv.lock # Python environment of post/ and cooling/ (uv)
 ├── make/
 │   ├── docker.mk            # compose wrapper, docker-build, docker-shell
 │   ├── solver.mk            # build-solver
@@ -117,8 +117,13 @@ services:
 │   ├── plot.py              # panels (flow, temperature, depth, froude), layout
 │   ├── animate.py           # CLI: frames -> mp4 + GIF
 │   └── metrics.py           # CLI: front, volume, bounds of reference runs; front and depth plots
+├── cooling/                 # 1D column: cooling of a liquid layer on the ground over hours (#9)
+│   ├── properties.py        # materials, molasses as in Steps 4-5, Andrade mu(T)
+│   ├── column.py            # graded finite-volume column, boundary exchange, implicit Euler
+│   └── analytic.py          # semi-infinite solid: surface step, contact, surface convection
 ├── docs/media/              # README animation and figures
-├── tests/                   # pytest: post/ on small synthetic cases, mesh and 0/ stamps of the case scripts
+├── tests/                   # pytest: post/ on small synthetic cases, mesh and 0/ stamps of the case scripts,
+│                            # cooling/ against closed-form solutions and its heat budget
 ├── solver/interThermalFoam/
 │   ├── Make/{files,options}
 │   ├── interThermalFoam.C   # time loop
