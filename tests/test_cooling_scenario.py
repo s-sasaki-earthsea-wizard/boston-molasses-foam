@@ -1,4 +1,4 @@
-"""Tests of the scenario runs of the cooling column: set-up, viscosity measures and summary."""
+"""Tests of the scenario runs of the cooling column: set-up, viscosity measures, summary and figures."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import pytest
 
 from cooling.analytic import contact_temperature
 from cooling.column import Adiabatic
+from cooling.figures import _spread, profile_figure
 from cooling.properties import GRANITE, MOLASSES
 from cooling.scenario import (
     THICKNESSES,
@@ -132,3 +133,22 @@ def test_summary_lists_one_run_per_line_with_its_changes(winter_5cm) -> None:
     assert "series" not in loaded["runs"][1]
     assert loaded["runs"][0]["doubling_hours"]["contact"] == 0.0
     assert text.count('\n  {"case"') == 2
+
+
+def test_spread_keeps_order_gap_and_bounds() -> None:
+    values = np.random.default_rng(1).uniform(0.0, 1.0, 6)
+    pos = _spread(values, 0.1, 0.0, 1.0)
+    np.testing.assert_array_equal(np.argsort(pos), np.argsort(values))
+    assert np.min(np.diff(np.sort(pos))) >= 0.1 - 1e-12
+    assert -1e-12 <= pos.min() and pos.max() <= 1.0 + 1e-12
+    far = np.array([0.1, 0.5, 0.9])
+    np.testing.assert_allclose(_spread(far, 0.1, 0.0, 1.0), far)
+
+
+def test_figures_are_byte_reproducible(tmp_path) -> None:
+    results = [run_case(Case(day, 0.2)) for day in DAYS]
+    first = profile_figure(results, tmp_path / "a.svg", "abc1234").read_bytes()
+    second = profile_figure(results, tmp_path / "b.svg", "abc1234").read_bytes()
+    assert first == second
+    assert b"<dc:date>" not in first
+    assert b"abc1234" in first  # the revision of the footer
