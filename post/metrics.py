@@ -32,7 +32,7 @@ from post.foamio import read_entry, read_text, time_dirs
 from post.frames import CaseInfo, Frame, load_case, load_frame
 
 FRONT_DEPTH = 0.25  # [m] front: last column with h >= FRONT_DEPTH
-SPEED_WINDOW = (3.0, 8.0)  # [s] front speed (x(t1) - x(t0)) / (t1 - t0)
+SPEED_WINDOW = (3.0, 8.0)  # [s] front speed (x(t1) - x(t0)) / (t1 - t0), see _interpolate
 ARRIVAL_X = (50.0, 100.0, 150.0)  # [m] arrival times of the front
 OUTLET_ALPHA = 1e-3  # the outlet (last) column counts as wetted once it holds more liquid
 CORE_ALPHA = 0.99  # cells counted as liquid for the cooling
@@ -135,9 +135,16 @@ def front_position(frame: Frame, x: np.ndarray) -> float:
     return float(x[wet].max()) if wet.any() else float("nan")
 
 
-def _at(times: np.ndarray, values: np.ndarray, t: float) -> float:
-    hit = np.isclose(times, t)
-    return float(values[hit][0]) if hit.any() else float("nan")
+def _interpolate(times: np.ndarray, values: np.ndarray, t: float) -> float:
+    """``values`` at time ``t``, linear between the written times.
+
+    NaN if ``t`` lies outside the written times or a neighbouring value is
+    NaN, so that a speed is never extrapolated.
+    """
+    lo, hi = times[0], times[-1]
+    if (t < lo and not np.isclose(t, lo)) or (t > hi and not np.isclose(t, hi)):
+        return float("nan")
+    return float(np.interp(t, times, values))
 
 
 def evaluate(path: Path) -> CaseMetrics:
@@ -188,7 +195,7 @@ def evaluate(path: Path) -> CaseMetrics:
         return float(tau[wet].max()) if wet.any() else 0.0
 
     t0, t1 = SPEED_WINDOW
-    speed = (_at(times, front, t1) - _at(times, front, t0)) / (t1 - t0)
+    speed = (_interpolate(times, front, t1) - _interpolate(times, front, t0)) / (t1 - t0)
 
     cooling = mu_change = None
     if info.solve_energy:

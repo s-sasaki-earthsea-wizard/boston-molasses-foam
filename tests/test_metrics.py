@@ -130,3 +130,18 @@ def test_require_finished_passes_finished_runs(tmp_path: Path) -> None:
     out = tmp_path / "fronts.svg"
     assert metrics.main([str(case), "--plot", str(out), "--require-finished"]) == 0
     assert out.exists()
+
+
+@pytest.mark.parametrize(("times", "speed"), [
+    (("0", "2.5", "3.5", "7.5", "8.5", "20"), 2.0),  # 3 and 8 s fall between written times
+    (("0", "3.0001", "7.9999", "20"), 2.0),  # written a little off 3 and 8 s
+    (("0", "2.5", "3.5", "6"), None),  # ends before 8 s: no extrapolation
+])
+def test_front_speed_between_written_times(tmp_path: Path, times: tuple[str, ...], speed: float | None) -> None:
+    """The front moves at 2 m/s; its speed over 3-8 s needs no output at exactly 3 and 8 s."""
+    case = _front_case(tmp_path / "case", {t: 10.0 + 2.0 * float(t) for t in times}, step=4)
+    m = evaluate(case)
+    if speed is None:
+        assert np.isnan(m.front_speed)
+    else:
+        assert m.front_speed == pytest.approx(speed, rel=1e-3)
