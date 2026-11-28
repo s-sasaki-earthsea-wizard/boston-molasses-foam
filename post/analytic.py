@@ -133,7 +133,12 @@ def huppert(x: np.ndarray, t: float, area: float, g: float, nu: float, x_wall: f
         g: Gravitational acceleration [m/s^2].
         nu: Kinematic viscosity [m^2/s].
         x_wall: Position of the wall [m].
+
+    Raises:
+        ValueError: If ``t`` <= 0, where the solution is not defined.
     """
+    if not t > 0:
+        raise ValueError(f"Huppert's solution needs t > 0 (got t = {t:g} s)")
     scale = (g * area**3 * t / (3.0 * nu)) ** 0.2
     xi = (np.asarray(x, dtype=float) - x_wall) / scale
     phi = (0.3 ** (1.0 / 3.0)) * np.cbrt(np.clip(HUPPERT_ETA_N**2 - xi**2, 0.0, None))

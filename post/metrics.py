@@ -325,7 +325,9 @@ def evaluate(
     area0 = float(volume[0])
     x_end = grid.extent[1]
     wall_depth = frames[-1].depth()[0]
-    huppert_wall = huppert(np.array([info.x_wall]), float(times[-1]), area0, info.g, nu0, info.x_wall)
+    t_last = float(times[-1])
+    huppert_wall = (float(huppert(np.array([info.x_wall]), t_last, area0, info.g, nu0, info.x_wall).depth[0])
+                    if t_last > 0 else float("nan"))
     profiles = {f"{t:g}": frames[i].depth().tolist()
                 for t in profile_times if (i := _index(times, t)) is not None}
     return CaseMetrics(
@@ -351,7 +353,7 @@ def evaluate(
         huppert_exponent=growth_exponent(
             times, info.x_wall + huppert_front(times, area0, info.g, nu0, FRONT_DEPTH), info.x_wall, x_end),
         wall_depth_end=float(wall_depth),
-        huppert_wall_depth_end=float(huppert_wall.depth[0]),
+        huppert_wall_depth_end=huppert_wall,
         film={f"{t:g}": film_check(frames[i], info)
               for t in front_at if (i := _index(times, t)) is not None},
         profiles=profiles,
@@ -428,7 +430,7 @@ def table(results: list[CaseMetrics]) -> str:
             (f"growth exponent d ln x / d ln t, 2nd half; Huppert at h = {FRONT_DEPTH:g} m (x_N: 0.2)",
              [f"{_fmt(m.growth_exponent, '.3f')}; {_fmt(m.huppert_exponent, '.3f')}" for m in results]),
             ("depth at the wall at the end, Huppert [m]",
-             [f"{m.wall_depth_end:.2f}, {m.huppert_wall_depth_end:.2f}" for m in results]),
+             [f"{_fmt(m.wall_depth_end, '.2f')}, {_fmt(m.huppert_wall_depth_end, '.2f')}" for m in results]),
         ]
         for key in results[0].front_at:
             rows.append((f"film at t = {key} s: Re, q/q_lub, τ₁/(3μū/h), u_s/(3ū/2) (all 1 for a viscous film)",
