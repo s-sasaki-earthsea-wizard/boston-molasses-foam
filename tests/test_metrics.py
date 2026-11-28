@@ -224,3 +224,19 @@ def test_front_plot_needs_one_initial_column(tmp_path: Path, capsys: pytest.Capt
     assert metrics.main([str(a), str(b)]) == 0  # the table alone does not need one
     with pytest.raises(ValueError, match="another column"):
         metrics.plot_fronts([evaluate(a), evaluate(b)], [load_case(a), load_case(b)], out)
+
+
+def test_line_styles_tell_liquid_and_mesh_apart(tmp_path: Path, figures: list) -> None:
+    """Three meshes and water on two of them: no two plotted fronts look alike."""
+    meshes = {"a": Y_FACES, "b": np.linspace(0.0, 4.0, 41), "c": np.linspace(0.0, 4.0, 17)}
+    cases = [_front_case(tmp_path / f"{name}{step}", {"0": 10.0, "20": 30.0}, y_faces=y, step=step)
+             for name, y in meshes.items() for step in (4, 1) if (name, step) != ("c", 1)]
+    results = [evaluate(c) for c in cases]
+    metrics.plot_fronts(results, [load_case(c) for c in cases], tmp_path / "fronts.svg")
+    (ax,) = figures[0].axes
+    # Line2D keeps the dash pattern it was given only privately
+    lines = [_line(ax, metrics.case_label(m, True)) for m in results]
+    looks = {(line.get_color(), str(line._unscaled_dash_pattern), line.get_linewidth()) for line in lines}
+    assert len(looks) == len(results)
+    assert lines[0]._unscaled_dash_pattern == (0, None)  # molasses on the first mesh: solid
+    assert lines[1]._unscaled_dash_pattern == metrics._WATER_STYLE["ls"]  # water on it: dotted

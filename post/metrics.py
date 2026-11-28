@@ -315,6 +315,44 @@ def check_columns(infos: list[CaseInfo]) -> str | None:
     return None
 
 
+# Ordinal one-hue ramp for the molasses viscosities (validated light->dark)
+_RAMP = {1: ["#2370cd"], 2: ["#6aabf1", "#0e3d7e"], 3: ["#6aabf1", "#2370cd", "#0e3d7e"]}
+_WATER_STYLE = {"lw": 1.4, "ls": (0, (1.5, 2))}
+# One dash pattern per mesh after the first case's (cycled past three; the
+# legend names the mesh)
+_MESH_DASHES = [(0, (4, 2)), (0, (7, 2, 1.5, 2)), (0, (10, 3))]
+
+
+def _styles(results: list[CaseMetrics]) -> list[dict]:
+    """Line style per case.
+
+    The colour tells the liquid: the molasses viscosities on the ramp, water
+    muted (and thinner). The pattern tells the mesh: the first case's mesh is
+    solid (water dotted), each other mesh dashed in its own pattern.
+    """
+    import matplotlib as mpl
+
+    from post import plot as pp
+
+    mu_levels = sorted({m.mu0 for m in results if m.step == 4})
+    colours = _RAMP.get(len(mu_levels)) or [
+        mpl.colors.to_hex(c) for c in mpl.colors.LinearSegmentedColormap.from_list(
+            "ramp", ["#6aabf1", "#0e3d7e"])(np.linspace(0, 1, len(mu_levels)))
+    ]
+    meshes = list(dict.fromkeys(m.mesh for m in results))
+    styles = []
+    for m in results:
+        style: dict = {"lw": 2.0}
+        if m.step == 4:
+            style["color"] = colours[mu_levels.index(m.mu0)]
+        else:
+            style.update(color=pp.INK_MUTED, **_WATER_STYLE)
+        if k := meshes.index(m.mesh):
+            style.update(ls=_MESH_DASHES[(k - 1) % len(_MESH_DASHES)], lw=min(style["lw"], 1.6))
+        styles.append(style)
+    return styles
+
+
 def plot_fronts(results: list[CaseMetrics], infos: list[CaseInfo], out: Path) -> None:
     """Front position over time against Ritter's front, saved as SVG or PNG.
 
@@ -335,15 +373,8 @@ def plot_fronts(results: list[CaseMetrics], infos: list[CaseInfo], out: Path) ->
     mpl.rcParams.update(pp._RC)
     mpl.rcParams["svg.hashsalt"] = "boston-molasses-fronts"
 
-    # Ordinal one-hue ramp for the molasses viscosities (validated light->dark)
-    ramp = {1: ["#2370cd"], 2: ["#6aabf1", "#0e3d7e"], 3: ["#6aabf1", "#2370cd", "#0e3d7e"]}
-    mu_levels = sorted({m.mu0 for m in results if m.step == 4})
-    colours = ramp.get(len(mu_levels)) or [
-        mpl.colors.to_hex(c) for c in mpl.colors.LinearSegmentedColormap.from_list(
-            "ramp", ["#6aabf1", "#0e3d7e"])(np.linspace(0, 1, len(mu_levels)))
-    ]
     with_mesh = len({m.mesh for m in results}) > 1
-    finest = min(m.dx for m in results)
+    styles = _styles(results)
 
     fig = Figure(figsize=(8.0, 4.4), facecolor=pp.SURFACE)
     ax = fig.add_subplot()
@@ -353,14 +384,7 @@ def plot_fronts(results: list[CaseMetrics], infos: list[CaseInfo], out: Path) ->
     outlets = sorted({inf.grid.extent[1] for inf in infos})
     ax.plot(t_ref, info.x_dam + info.front_speed * t_ref, color=pp.REFERENCE, lw=1.0, ls=pp.DASH,
             label=f"Ritter front {info.x_dam:g} m + 2√(gH) t (frictionless)")
-    for m, inf in zip(results, infos):
-        style: dict = {"lw": 2.0}
-        if m.step == 4:
-            style["color"] = colours[mu_levels.index(m.mu0)]
-        else:
-            style.update(color=pp.INK_MUTED, lw=1.4, ls=(0, (1.5, 2)))
-        if with_mesh and m.dx == finest:
-            style.update(ls=(0, (4, 2)), lw=1.6)
+    for m, inf, style in zip(results, infos, styles):
         t = np.array([0.0, *m.front_time[1:]])
         x = np.array([inf.x_dam, *m.front_x[1:]])
         # Stop at the outlet: the last columns drain over the open boundary,
