@@ -151,7 +151,8 @@ def evaluate(path: Path) -> CaseMetrics:
     area = grid.dx * grid.dy
 
     front = np.array([front_position(f, grid.x) for f in frames])
-    volume = np.array([f.alpha.sum() * area for f in frames])
+    # Unclipped alpha: the volume the solver holds, bounding errors included
+    volume = np.array([f.alpha_raw.sum() * area for f in frames])
     outlet = np.array([f.alpha[:, -1].max() > OUTLET_ALPHA for f in frames])
     outflow_start = float(times[outlet][0]) if outlet.any() else None
     before = times < outflow_start if outflow_start is not None else np.ones_like(times, dtype=bool)

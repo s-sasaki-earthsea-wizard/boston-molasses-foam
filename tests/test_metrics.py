@@ -37,3 +37,16 @@ def test_front_speed_and_arrival(tmp_path: Path) -> None:
     assert m.front_speed == pytest.approx(2.0)
     assert m.arrival == {"50": None, "100": None, "150": None}
     assert m.volume0 == pytest.approx(10.0 * COLUMN)
+
+
+def test_volume_from_unclipped_alpha(tmp_path: Path) -> None:
+    """The volume keeps the solver's bounding errors; depth and front use clipped alpha."""
+    alpha0 = column_alpha(Y_FACES, np.where(_x() < 10.0, COLUMN, 0.0))
+    alpha = alpha0.copy()
+    alpha[0, 0] = 1.0 + 1e-3  # overshoot in the column
+    alpha[-1, -1] = -5e-4  # undershoot in the air
+    case = write_case(tmp_path / "case", X_FACES, Y_FACES,
+                      {"0": (alpha0, np.zeros_like(alpha0)), "10": (alpha, np.zeros_like(alpha))}, step=4)
+    m = evaluate(case)
+    assert m.volume_dev == pytest.approx((1e-3 - 5e-4) * 0.5 * 0.5)
+    assert m.front_x == [9.75, 9.75]
