@@ -46,6 +46,17 @@ class Material:
         return math.sqrt(self.conductivity * self.volumetric_heat_capacity)
 
 
+# Ground under the molasses (wiki Cooling-column-inputs, "Ground"). Only k and
+# rho Cp enter the conduction.
+# Granite: diffusivity 1.6e-6 m2/s and effusivity 2,177 J/m2/K/s^0.5 (USGS
+# OFR 88-441, Table 13), so k = 2.754 W/m/K and rho Cp = 1.721 MJ/m3/K; the
+# split of rho Cp into rho and Cp is nominal.
+GRANITE = Material("granite", conductivity=2.754, density=2650.0, heat_capacity=649.5)
+# Concrete with stone aggregate: k = 0.75 Btu/(ft h F) = 1.30 W/m/K and
+# 140 lb/ft3 = 2,240 kg/m3 (TM 5-852-6, Table 2-2), Cp = 0.20 Btu/(lb F) =
+# 837 J/kg/K (Table 2-1, "Concrete (avg. stone)").
+CONCRETE = Material("concrete", conductivity=1.30, density=2240.0, heat_capacity=837.0)
+
 # Cane final molasses of Steps 4-5 (scripts/set_step.sh, MOLASSES_*);
 # tests/test_cooling_properties.py keeps the two in step.
 MOLASSES = Material("molasses", conductivity=0.31, density=1430.0, heat_capacity=2050.0)
