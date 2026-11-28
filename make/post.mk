@@ -29,7 +29,7 @@ METRICS_ARGS      ?=
 README_FRONTS     := docs/media/fronts-step4.svg
 README_FRONT_DIRS ?= case-step1 case-step4-low case-step4-central case-step4-high
 README_STEP5_DIRS ?= case-step5-low case-step5-central case-step5-high
-README_STEP5_T    := 30 60 120
+README_STEP5_T    := 30 120 300 600
 README_STEP5_ARGS := --arrival 100 200 300 --front-at $(README_STEP5_T) --huppert \
 	--plot docs/media/fronts-step5.svg \
 	--profiles docs/media/profiles-step5.svg --profile-times $(README_STEP5_T)

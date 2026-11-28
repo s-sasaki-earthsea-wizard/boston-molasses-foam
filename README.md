@@ -356,6 +356,96 @@ viscosity variants. Later, as the layer thins to one or two cells, the
 arrival times differ by ~10 %, less liquid has left by 20 s, and the wall
 shear doubles: that stage is not mesh-converged.
 
+### Step 5: spreading stage
+
+```bash
+make run-step5 CASE_DIR=case-step5-low     MOLASSES_MU=low
+make run-step5 CASE_DIR=case-step5-central                    # MOLASSES_MU=central
+make run-step5 CASE_DIR=case-step5-high    MOLASSES_MU=high
+make readme-step5     # docs/media/{fronts,profiles}-step5.svg from these three runs
+```
+
+Per run: 20,000–25,000 time steps, 1.6–2.0 h CPU time and 2.9 GB of output
+(601 compressed time directories). After 300 s the time step stays at
+`maxDeltaT` (0.05 s); before that, air still moving from the collapse
+(up to 5 m/s at 60 s) limits it, not the liquid.
+
+The reference is Huppert's (1982) similarity solution for a 2D viscous
+current of fixed area A on a no-slip bottom, x_N = 1.411 (g A³ t / 3ν)^(1/5)
+(`post/analytic.py`). It holds once the current is long and thin and inertia
+is negligible; the wiki page
+[Spreading stage](https://github.com/s-sasaki-earthsea-wizard/boston-molasses-foam/wiki/Spreading-stage)
+derives it and discusses the runs in more detail.
+
+![Front position against time over 600 s: after the wave stage the three molasses fronts creep, ahead of Huppert's viscous fronts and approaching them](docs/media/fronts-step5.svg)
+
+*Front position of the Step 5 runs against Ritter's frictionless front and
+Huppert's viscous current of the same area (dotted, from 5 s). The wave
+stage leaves the currents 1.4–1.6 times longer than Huppert's front at 30 s;
+they then creep and approach it from above.*
+
+![Depth profiles at 30, 120, 300 and 600 s: nearly flat layers at first, approaching Huppert's profiles by 600 s](docs/media/profiles-step5.svg)
+
+*Depth profiles h(x) of the Step 5 runs against Huppert's profiles (dotted).*
+
+| Check                                               | Step 5 low       | Step 5 central   | Step 5 high      |
+|-----------------------------------------------------|------------------|------------------|------------------|
+| Front speed 3–8 s [m/s] (Step 4, 0.5 m mesh)        | 15.0 (15.4)      | 12.3 (12.9)      | 9.1 (8.7)        |
+| Front at t = 30 / 120 / 600 s [m]                   | 266 / 302 / 329  | 202 / 228 / 266  | 144 / 165 / 201  |
+| Huppert x_N at t = 30 / 120 / 600 s [m]             | 164 / 216 / 298  | 134 / 176 / 243  | 103 / 136 / 188  |
+| Front / x_N at t = 120 / 600 s                      | 1.40 / 1.10      | 1.29 / 1.09      | 1.21 / 1.07      |
+| Growth exponent d ln x / d ln t, 300–600 s (Huppert: 0.2) | 0.063      | 0.107            | 0.138            |
+| Depth at the wall at 600 s, Huppert [m]             | 0.49, 0.57       | 0.64, 0.70       | 0.86, 0.91       |
+| Viscous-film check at 600 s: Re; q / q_lub; τ₁ / (3μū/h) | 0.79; 1.05; 1.02 | 0.42; 1.05; 1.13 | 0.15; 1.24; 1.33 |
+| First-cell α under the body at 120 / 600 s          | 0.74 / 0.96      | 0.56 / 0.89      | 0.44 / 0.63      |
+| Largest deviation of the liquid area [m²]           | 0.038            | 0.016            | 0.010            |
+| Max cooling of liquid cells (alpha > 0.99) [K]      | 0.015            | 0.013            | 0.015            |
+| Time steps, CPU time                                | 25,113, 7,158 s  | 21,772, 6,336 s  | 20,345, 5,845 s  |
+
+- alpha stays within [−6.1·10⁻⁶, 1 + 1.7·10⁻⁴]; no liquid reaches the
+  outlet in amounts the outflow check counts (alpha > 10⁻³), but traces of
+  ~10⁻⁴ leave the low run from ~60 s.
+- The first 120 s are identical to those of 120 s runs with the same inputs
+  (fields compared at 30 and 120 s).
+- The viscous-film check takes the body of the current (h ≥ 0.25 m, at least
+  20 m from the wall and the front) and compares its flux and first-cell
+  shear with those of a half-parabolic lubrication profile of the same depth
+  and mean velocity (medians; `FilmCheck` in `post/metrics.py`).
+
+**Approach to the viscous current.** Up to ~10 s the fronts follow Step 4.
+By 30 s the liquid is a nearly flat layer, 0.55–1.1 m deep and 1.4–1.6 times
+longer than x_N; from ~60 s on its body is a viscous film (Re < 2). The
+current then creeps and its profile approaches the similarity profile: by
+600 s the fronts are 7–10 % ahead of x_N and the depths at the wall 6–15 %
+below Huppert's. A time origin shifted by t₀, x_f(t) = x_N(t + t₀), fitted at 120 s
+(t₀ = 520, 315 and 190 s) predicted 338, 265 and 199 m at 600 s; the runs
+reach 329, 266 and 201 m.
+
+**Air under the current.** During the wave stage the liquid overruns air at
+the bottom: under the body, the first cell (0.05 m) holds about half air from
+~5 s on (median alpha 0.34–0.65 at 5 s, 0.44–0.74 at 120 s, i.e. 1.6–3.2 cm
+of air). The viscosity is alpha-weighted, so this layer acts as a slip layer:
+at 120 s the first-cell shear is 1.3–1.8 times, and the flux up to 1.25
+times, that of a viscous film of the same depth. Later the air rises into
+the layer as a diffuse mixture (alpha ≈ 0.93–0.99 over the depth), the
+bottom is wetted again in the low and central runs, and the ratios approach
+1. See [Known limitations](#known-limitations).
+
+**Mesh check.** Step 5 central for 120 s on a mesh with every cell twice as
+wide and tall (400 × 57 cells,
+`make run-step5 CASE_DIR=case-step5-central-coarse MESH_REFINE=0.5 END_TIME=120`):
+
+|                                         | Step 5 mesh      | `MESH_REFINE=0.5` |
+|-----------------------------------------|------------------|-------------------|
+| Front speed 3–8 s [m/s]                 | 12.3             | 12.6              |
+| Front at t = 30 / 60 / 120 s [m]        | 202 / 217 / 228  | 211 / 224 / 235   |
+| Depth at the wall at 120 s [m]          | 0.73             | 0.73              |
+| First-cell α, air under the body at 120 s | 0.56, 2.3 cm   | 0.66, 3.5 cm      |
+| Time steps, CPU time (120 s)            | 11,542, 2,511 s  | 5,043, 281 s      |
+
+The fronts differ by 3–4 % and the depth at the wall not at all, against a
+spread of 165–302 m between the viscosity variants at 120 s.
+
 ## Animations
 
 ```bash
@@ -418,7 +508,8 @@ front speed or shape is realistic.
   after one minute, i.e. far below one cell; what exchange there is happens in the
   mixed interface cells. In the reference runs the liquid cells
   (alpha > 0.99) cool by ≤ 0.014 K within 20 s and mu(T) changes by ≤ 0.15 %, so
-  Steps 2–4 verify the code path rather than predict cooling. Cooling-driven thickening (minutes
+  Steps 2–4 verify the code path rather than predict cooling. Step 5 (first
+  cell 0.05 m) does not change this: ≤ 0.015 K within 600 s. Cooling-driven thickening (minutes
   to hours) needs resolved thermal boundary layers, air-side convection and
   much longer runs.
 - **Bottom friction is effectively absent for water.** The bottom is a
@@ -436,6 +527,16 @@ front speed or shape is realistic.
   matters most and where the 0.5 m mesh is not converged (see the mesh study
   under [Reference runs](#reference-runs)). Steps 1–4 therefore stop at 20 s;
   Step 5 follows the spreading on a bottom-refined mesh and a longer domain.
+- **Air trapped under the spreading molasses (Step 5).** The first cell under
+  the body of the current holds about half air for the first minutes (see
+  [Step 5](#step-5-spreading-stage)). Through the alpha-weighted viscosity it
+  lets the current slip at the bottom: at 120 s the flux of the body is up to
+  25 % above that of a viscous film. If it acted like a viscosity lower by
+  that factor, the front would move ~2–5 % further (x_N ∝ ν^(−1/5)); this is
+  an estimate, not a measurement. It is most likely numerical: Step 4 on
+  square cells shows no such layer while the current is several cells deep,
+  and its thickness depends on the cell size (3.5 cm with a 0.1 m first cell,
+  2.3 cm with 0.05 m). The cause has not been traced.
 - The vertical open boundary (`right`, `p_rgh = 0`) acts as a free overfall;
   fine for the supercritical dam-break front, not for subcritical outflow.
 - Air-side convection/turbulence and radiation are not modelled; density is
