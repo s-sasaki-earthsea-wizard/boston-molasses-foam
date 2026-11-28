@@ -32,3 +32,42 @@ def test_evaluate_initial_fields_only(tmp_path: Path) -> None:
     assert m.times == (0.0, 0.0)
     assert math.isnan(m.huppert_wall_depth_end)
     assert m.volume0 == pytest.approx(10.0 * COLUMN)
+
+
+def _film_case(tmp_path: Path, alpha_body: float) -> Path:
+    """A current 0.8-0.4 m deep over 100 m, half-parabolic, at t = 60 s.
+
+    With ``alpha_body`` < 1 the liquid is spread as that fraction over the
+    cells below 0.8/alpha_body of the depth, so that no cell is liquid
+    (alpha >= 0.5) when ``alpha_body`` < 0.5.
+    """
+    x_faces = np.linspace(0.0, 120.0, 121)
+    x = 0.5 * (x_faces[:-1] + x_faces[1:])
+    depth = np.where(x < 100.0, 0.8 - 0.4 * x / 100.0, 0.0)
+    y = 0.5 * (Y_FACES[:-1] + Y_FACES[1:])
+    alpha = column_alpha(Y_FACES, depth / alpha_body) * alpha_body
+    spread = np.maximum(depth / alpha_body, 1e-9)
+    ux = np.where(y[:, None] < spread[None, :],
+                  1e-2 * (2.0 * y[:, None] / spread[None, :] - (y[:, None] / spread[None, :]) ** 2), 0.0)
+    alpha0 = column_alpha(Y_FACES, np.where(x < 10.0, COLUMN, 0.0))
+    return write_case(tmp_path / "case", x_faces, Y_FACES,
+                      {"0": (alpha0, np.zeros_like(alpha0)), "60": (alpha, ux)})
+
+
+def test_film_check_wetted_body(tmp_path: Path) -> None:
+    m = evaluate(_film_case(tmp_path, 1.0), front_at=(60.0,))
+    film = m.film["60"]
+    assert film.columns > 0
+    assert film.bed_alpha == pytest.approx(1.0)
+    assert film.bed_air == pytest.approx(0.0, abs=1e-12)
+    assert film.surface_velocity == pytest.approx(1.0, abs=0.05)
+
+
+def test_film_check_without_liquid_cells(tmp_path: Path) -> None:
+    """Diffuse liquid (alpha 0.4 everywhere) has no surface: no air, no surface speed."""
+    m = evaluate(_film_case(tmp_path, 0.4), front_at=(60.0,))
+    film = m.film["60"]
+    assert film.columns > 0
+    assert film.bed_alpha == pytest.approx(0.4)
+    assert math.isnan(film.surface_velocity)
+    assert math.isnan(film.bed_air)

@@ -87,14 +87,16 @@ class FilmCheck:
         reynolds: Median ubar h / nu.
         wall_shear: First-cell shear u1 / (dy1/2) against 3 ubar / h.
         surface_velocity: Velocity of the top liquid cell (alpha >= 0.5)
-            against 3/2 ubar.
+            against 3/2 ubar; columns without such a cell (diffuse liquid)
+            are left out.
         flux: Flux sum(alpha u dy) against -g h^3 (dh/dx) / (3 nu), with dh/dx
             fitted over +-FILM_SLOPE_HALF; negative where the flux runs up
             the fitted slope.
         bed_alpha: Median alpha of the first cell; 1 where the liquid wets the
             bottom.
         bed_air: Median air thickness sum((1 - alpha) dy) [m] below the top
-            liquid cell, i.e. air trapped under or inside the current.
+            liquid cell, i.e. air trapped under or inside the current;
+            columns without a liquid cell are left out.
     """
 
     columns: int
@@ -196,6 +198,12 @@ def _at(times: np.ndarray, values: np.ndarray, t: float) -> float:
     return float(values[i]) if i is not None else float("nan")
 
 
+def _median(values: np.ndarray) -> float:
+    """Median of the finite values; NaN if there are none."""
+    finite = values[np.isfinite(values)]
+    return float(np.median(finite)) if finite.size else float("nan")
+
+
 def film_check(frame: Frame, info: CaseInfo) -> FilmCheck:
     """Compare the body of the current with a viscous film (see FilmCheck)."""
     grid = info.grid
@@ -216,10 +224,14 @@ def film_check(frame: Frame, info: CaseInfo) -> FilmCheck:
     hb = h[cols]
     ubar = q[cols] / hb
     liquid = frame.alpha[:, cols] >= 0.5
+    # Diffuse columns without a liquid cell have no surface: argmax would
+    # give the top of the domain
+    has_liquid = liquid.any(axis=0)
     top = grid.ny - 1 - np.argmax(liquid[::-1], axis=0)
-    u_surface = frame.ux[top, cols]
+    u_surface = np.where(has_liquid, frame.ux[top, cols], np.nan)
     below_top = np.arange(grid.ny)[:, None] < top[None, :]
-    air = ((1.0 - frame.alpha[:, cols]) * below_top * grid.dy_cells[:, None]).sum(axis=0)
+    air = np.where(has_liquid,
+                   ((1.0 - frame.alpha[:, cols]) * below_top * grid.dy_cells[:, None]).sum(axis=0), np.nan)
     slope = np.array([np.polyfit(grid.x[w], h[w], 1)[0] for w in
                       (np.abs(grid.x - grid.x[i]) <= FILM_SLOPE_HALF for i in cols)])
     with np.errstate(invalid="ignore", divide="ignore"):
@@ -229,10 +241,10 @@ def film_check(frame: Frame, info: CaseInfo) -> FilmCheck:
             cells=float(np.median(np.searchsorted(grid.y_faces, hb))),
             reynolds=float(np.median(np.abs(ubar) * hb / nu)),
             wall_shear=float(np.median(frame.ux[0, cols] / (grid.dy_cells[0] / 2.0) / (3.0 * ubar / hb))),
-            surface_velocity=float(np.median(u_surface / (1.5 * ubar))),
+            surface_velocity=_median(u_surface / (1.5 * ubar)),
             flux=float(np.median(q[cols] / (-info.g * hb**3 * slope / (3.0 * nu)))),
             bed_alpha=float(np.median(frame.alpha[0, cols])),
-            bed_air=float(np.median(air)),
+            bed_air=_median(air),
         )
 
 
