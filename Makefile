@@ -4,7 +4,8 @@
 #
 #  Every OpenFOAM command is wrapped in `docker compose run --rm openfoam ...`
 #  (see make/docker.mk); animations are rendered on the host with uv and
-#  ffmpeg (see make/post.mk). Run `make help` for the list of targets.
+#  ffmpeg (see make/post.mk), and the 1D cooling column runs on the host
+#  with uv (see make/cooling.mk). Run `make help` for the list of targets.
 # =============================================================================
 
 SHELL         := /bin/bash
@@ -21,6 +22,7 @@ include make/docker.mk
 include make/solver.mk
 include make/case.mk
 include make/post.mk
+include make/cooling.mk
 
 .PHONY: help clean clean-all test
 
