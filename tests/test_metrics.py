@@ -164,6 +164,18 @@ def _legend_texts(fig) -> list[str]:
     return [t.get_text() for ax in fig.axes if ax.get_legend() for t in ax.get_legend().get_texts()]
 
 
+@pytest.mark.parametrize(("t_end", "expected"), [(2.0, False), (5.0, False), (600.0, True)])
+def test_huppert_front_legend_only_with_a_curve(tmp_path: Path, figures: list, t_end: float,
+                                                expected: bool) -> None:
+    """A run that ends by HUPPERT_FROM draws no Huppert front, so the legend has no entry for it."""
+    case = _front_case(tmp_path / "case", 120.0, {"0": 10.0, f"{t_end:g}": 60.0}, step=5)
+    metrics.plot_fronts([evaluate(case)], [load_case(case)], tmp_path / "fronts.svg", with_huppert=True)
+    (ax,) = figures[0].axes
+    assert any("Huppert" in t for t in _legend_texts(figures[0])) == expected
+    assert any(np.size(line.get_xdata()) > 2 for line in ax.get_lines()
+               if line.get_label().startswith("_")) == expected
+
+
 @pytest.mark.parametrize(("step", "times", "expected"), [(1, (30.0,), False), (5, (0.0,), False),
                                                          (5, (30.0,), True)])
 def test_huppert_legend_only_with_a_curve(tmp_path: Path, figures: list, step: int,
