@@ -1,12 +1,13 @@
 [project]
 name = "boston-molasses-post"
 version = "0.1.0"
-description = "Post-processing and animations for the Boston molasses flood 2D OpenFOAM case"
+description = "Post-processing, animations and the 1D cooling column for the Boston molasses flood 2D OpenFOAM case"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "matplotlib>=3.8",
     "numpy>=1.26",
+    "scipy>=1.17.1",
 ]
 
 [tool.uv]

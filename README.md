@@ -6,9 +6,10 @@ is inspired by the Boston Molasses Disaster (15 January 1919).
 
 Every OpenFOAM command runs in Docker; for the simulations the host only
 needs `make`, `bash`, `awk` and Docker Compose v2. The post-processing
-(`metrics`, `readme-fronts`, `readme-step5`, the animations) and `make test`
-run on the host with [uv](https://docs.astral.sh/uv/); rendering the
-animations also needs `ffmpeg`.
+(`metrics`, `readme-fronts`, `readme-step5`, the animations), the 1D cooling
+column (`cooling-runs`, see [Cooling over hours](#cooling-over-hours-1d-column))
+and `make test` run on the host with [uv](https://docs.astral.sh/uv/);
+rendering the animations also needs `ffmpeg`.
 
 ![Step 2: water dam break, liquid coloured by speed and temperature, depth against Ritter's solution](docs/media/dambreak-step2.gif)
 
@@ -45,9 +46,10 @@ so a fresh checkout goes from `make run-step4` to results in one command
 | `metrics`       | Front, volume, bounds of `METRICS_DIRS` (host: uv)                   |
 | `readme-fronts` | Plot the fronts of the finished reference runs to `docs/media/fronts-step4.svg` |
 | `readme-step5`  | Plot the Step 5 fronts and depth profiles of finished runs to `docs/media/*-step5.svg` |
+| `cooling-runs`  | Run the 1D cooling column (#9); summary to `docs/cooling/summary.json`, figures to `docs/media/cooling-*.svg` (host: uv) |
 | `clean`         | Remove time directories, solver logs, `postProcessing/`              |
 | `clean-all`     | `clean` + mesh, `0/`, `build/` and wmake objects                     |
-| `test`          | Tests of `post/` and `scripts/` (host: uv + pytest; no OpenFOAM)     |
+| `test`          | Tests of `post/`, `cooling/` and `scripts/` (host: uv + pytest; no OpenFOAM) |
 
 Container commands are wrapped as
 `docker compose -f docker/docker-compose.yml run --rm -T openfoam ...`,
@@ -96,12 +98,13 @@ services:
 ```text
 .
 ├── Makefile                 # includes make/*.mk, help/clean/test targets
-├── pyproject.toml, uv.lock # Python environment of post/ (uv)
+├── pyproject.toml, uv.lock # Python environment of post/ and cooling/ (uv)
 ├── make/
 │   ├── docker.mk            # compose wrapper, docker-build, docker-shell
 │   ├── solver.mk            # build-solver
 │   ├── case.mk              # mesh, init, run-step1..5
-│   └── post.mk              # run-anim, anim, readme-gif, metrics, readme-fronts, readme-step5
+│   ├── post.mk              # run-anim, anim, readme-gif, metrics, readme-fronts, readme-step5
+│   └── cooling.mk           # cooling-runs
 ├── docker/
 │   ├── Dockerfile           # opencfd/openfoam-dev:2312 + project overrides
 │   ├── docker-compose.yml   # mounts the project root at /work
@@ -117,8 +120,19 @@ services:
 │   ├── plot.py              # panels (flow, temperature, depth, froude), layout
 │   ├── animate.py           # CLI: frames -> mp4 + GIF
 │   └── metrics.py           # CLI: front, volume, bounds of reference runs; front and depth plots
+├── cooling/                 # 1D column: cooling of a liquid layer on the ground over hours (#9)
+│   ├── properties.py        # materials (molasses as in Steps 4-5, granite, concrete), Andrade mu(T)
+│   ├── column.py            # graded finite-volume column, boundary exchange, implicit Euler
+│   ├── analytic.py          # semi-infinite solid: surface step, contact, surface convection
+│   ├── sun.py               # solar position, clear-sky irradiance (Haurwitz), cloud factor
+│   ├── surface.py           # surface balance: convection forms, sky long-wave, sun
+│   ├── weather.py           # air, humidity and sun of 15 January 1919 and 15 July
+│   ├── scenario.py          # CLI: the runs, viscosity measures, summary JSON
+│   └── figures.py           # SVG figures of the runs
 ├── docs/media/              # README animation and figures
-├── tests/                   # pytest: post/ on small synthetic cases, mesh and 0/ stamps of the case scripts
+├── docs/cooling/            # summary.json of the cooling-column runs
+├── tests/                   # pytest: post/ on small synthetic cases, mesh and 0/ stamps of the case scripts,
+│                            # cooling/ against closed-form solutions, its heat budget and the scenario runs
 ├── solver/interThermalFoam/
 │   ├── Make/{files,options}
 │   ├── interThermalFoam.C   # time loop
@@ -535,6 +549,99 @@ solution is frictionless, and so is the water run in practice (see
 [Known limitations](#known-limitations)): the agreement does not mean the
 front speed or shape is realistic.
 
+## Cooling over hours: 1D column
+
+The VOF runs end after 10 minutes, long before cooling can thicken the
+molasses (see [Known limitations](#known-limitations)). Whether it thickened
+over the hours of the rescue (the American Physical Society press release of
+2016 puts forward that cooling after sunset did; quoted in
+[ADR-0001](https://github.com/s-sasaki-earthsea-wizard/boston-molasses-foam/wiki/ADR-0001-Cooling-check-with-a-1D-column))
+is checked with a 1D column
+(issue #9): a layer of molasses at rest on the street, cooled from above by
+the air and the sky and from below by the street, for 12 h from the
+collapse at 12:40 EST. 15 January 1919, with the air readings of the day, is
+compared with 15 July, with the hourly normals of 1991–2020.
+
+```bash
+make cooling-runs   # 240 runs, ~20 s with 16 jobs -> docs/cooling/summary.json, docs/media/cooling-*.svg
+```
+
+The inputs, their sources and the values adopted are on the wiki page
+[Cooling-column inputs](https://github.com/s-sasaki-earthsea-wizard/boston-molasses-foam/wiki/Cooling-column-inputs); why the convection
+correlations differ, on
+[Why convection coefficients differ](https://github.com/s-sasaki-earthsea-wizard/boston-molasses-foam/wiki/Why-convection-coefficients-differ).
+Base case: molasses at the air temperature at 12:40 + 5 °C (11.2 °C in
+January, 31.4 °C in July) on 0.15 m of granite over concrete (1 °C and
+24 °C), convection after Clear et al. (2001) over a 30 m fetch with a wind of
+2 m/s at 3 m, a clear sky (Swinbank) and clear-sky sun (Haurwitz),
+emissivity 0.95, albedo 0.07. Each thickness is also run with only the
+surface or only the ground exchange, and with one uncertain input at a time
+at the end of its range.
+
+The viscosity is given relative to the start (Andrade, B = 8.5·10³ K);
+multiplied by the viscosity at the start (48 Pa s in January, 6.7 Pa s in
+July for the central μ₀ of Steps 4–5) it gives Pa s. The *flow-weighted*
+viscosity is that of a uniform layer that carries the same flux in a slow
+gravity-driven flow, H³ / (3 ∫ (H − z)² / μ dz); it weights the bottom,
+where the shear is largest.
+
+![Flow-weighted and surface viscosity of layers of 2 cm to 1 m against clock time, 15 January 1919 and 15 July](docs/media/cooling-viscosity.svg)
+
+| Layer | 15 Jan: flow-weighted at 15:40 / 18:40 / 00:40 | doubled at | 15 Jul: at 15:40 / 18:40 / 00:40 | doubled at |
+|-------|-----------------------------------------------|-----------|---------------------------------|-----------|
+| 2 cm  | ×1.60 / ×2.78 / ×4.20 | 16:27 | ×0.44 / ×0.83 / ×1.92 | — |
+| 5 cm  | ×1.47 / ×2.30 / ×3.48 | 17:33 | ×0.58 / ×0.80 / ×1.74 | — |
+| 10 cm | ×1.41 / ×1.73 / ×2.54 | 20:39 | ×0.89 / ×0.85 / ×1.38 | — |
+| 20 cm | ×1.31 / ×1.42 / ×1.70 | —     | ×1.12 / ×1.09 / ×1.17 | — |
+| 50 cm | ×1.14 / ×1.19 / ×1.27 | —     | ×1.09 / ×1.11 / ×1.15 | — |
+| 1 m   | ×1.07 / ×1.10 / ×1.14 | —     | ×1.05 / ×1.06 / ×1.09 | — |
+
+| Layers of 50 cm and more            | 15 January 1919        | 15 July                |
+|-------------------------------------|------------------------|------------------------|
+| Bottom, on contact with the street  | 4.1 °C, ×2.15          | 26.3 °C, ×1.61         |
+| Surface, warmest in the afternoon sun | 19.0 °C              | 58.2 °C                |
+| Surface viscosity doubled at        | 17:17 (sunset 16:35)   | 22:04 (sunset 19:20)   |
+| Surface at 00:40                    | −3.2 °C, ×4.95         | 21.4 °C, ×2.57         |
+
+![Viscosity through a 20 cm layer at 1, 3, 6 and 12 h after the collapse](docs/media/cooling-profiles.svg)
+
+- **The street stiffens the bottom at once.** Two semi-infinite bodies in
+  contact take a constant temperature between theirs, weighted by their
+  effusivities; the granite at 1 °C takes the bottom of the molasses to
+  4.1 °C and doubles its viscosity on contact. This, not the air, is what
+  sets January apart: in July the bottom stiffens by ×1.6.
+- **The sun thins the top in the afternoon, the clear sky stiffens it after
+  sunset.** On a thick layer the surface viscosity doubles 42 min after
+  sunset in January; in July it doubles too, 2 h 44 min after sunset. The
+  thickening of the surface after sunset is not peculiar to winter. (On
+  layers of a few centimetres the street cools the top as well, and it
+  doubles earlier: 16:06 for 2 cm in January.)
+- **Only thin layers thicken as a whole within the evening.** In January the
+  flow-weighted viscosity of 2–5 cm doubles between 16:27 and 17:33, of
+  10 cm by 20:39; layers of 20 cm and more reach ×1.70 at most in 12 h. In July
+  no layer doubles in 12 h. In absolute terms a 5 cm layer reaches about
+  170 Pa s by 00:40 in January and 12 Pa s in July (central μ₀).
+- **The ground is the input that matters.** For 10 cm at 18:40 the
+  flow-weighted viscosity ranges ×1.40–×1.87 over a January ground of −0.5
+  to 5 °C (base ×1.73), and a street of concrete only lowers it by 5 %;
+  every other input moves it by 4 % or less, the convection forms (bulk,
+  McAdams as an upper bound) by less than 1 %. Clouds (0.65) matter most
+  for the surface: ×2.10 instead of ×2.91.
+
+![Flow-weighted and surface viscosity of a 10 cm layer at 18:40 for one changed input at a time](docs/media/cooling-sensitivity.svg)
+
+![Convection, net long-wave, absorbed sun and net loss at the surface of a 10 cm layer](docs/media/cooling-surface-terms.svg)
+
+Limits of the column: the molasses is at rest (no flow, no mixing), the
+ground and the molasses start uniform, the sky is clear and the wind
+steady. B was fitted between 0 and 10 °C: below 0 °C (January surfaces,
+down to −5.1 °C in the base runs) the press release reports a steeper rise,
+so the January ratios there are lower bounds, and the July base runs
+extrapolate B to 19.6–58.2 °C.
+Halving the time step (30 s) or the cells changes the ratios by at most
+0.14 % and the doubling times by 0.2 min; the heat budget of every run
+closes to 2·10⁻¹⁰ of the heat lost by the molasses.
+
 ## Known limitations
 
 - **Interfacial heat transfer is not resolved at Δ = 0.5 m.** The conductive
@@ -574,5 +681,31 @@ front speed or shape is realistic.
   0.1 m first cell, 2.2 cm in a 0.05 m one). The cause has not been traced.
 - The vertical open boundary (`right`, `p_rgh = 0`) acts as a free overfall;
   fine for the supercritical dam-break front, not for subcritical outflow.
-- Air-side convection/turbulence and radiation are not modelled; density is
+- Air-side convection/turbulence and radiation are not modelled in the VOF
+  solver (the 1D column has them, see
+  [Cooling over hours](#cooling-over-hours-1d-column)); density is
   independent of temperature.
+
+## Data credits
+
+The inputs of the cooling column (`cooling/weather.py`, `cooling/properties.py`)
+come from the sources listed, with their licences, on the wiki page
+[Cooling-column inputs](https://github.com/s-sasaki-earthsea-wizard/boston-molasses-foam/wiki/Cooling-column-inputs#credits-and-licences).
+The records whose values are in this repository:
+
+- Air temperatures of 15 January 1919: *Boston Daily Globe*, 16 January 1919,
+  p. 1, "The Weather". Relative humidity: U.S. Weather Bureau, *Monthly
+  Weather Review* 47(1), January 1919, Table I. Works of the U.S. Government
+  have no copyright protection (17 U.S.C. § 105); the newspaper was
+  published in the United States before 1931 and is in the public domain.
+- U.S. Climate Normals, as requested by NCEI: Palecki, Michael; Durre, Imke;
+  Applequist, Scott; Arguez, Anthony; Lawrimore, Jay (2021). U.S. Climate
+  Normals 2020: U.S. Hourly Climate Normals (1991-2020). Boston Logan
+  International Airport, USW00014739. NOAA National Centers for Environmental
+  Information. Dataset. https://doi.org/10.25921/e3zh-ag77. Accessed 2026-11-28.
+- U.S. Climate Reference Network (ground temperatures), as requested by NCEI:
+  Diamond, H. J., et al. (2013). U.S. Climate Reference Network after one
+  decade of operations: status and assessment. *Bull. Amer. Meteor. Soc.*,
+  94, 489–498, doi:10.1175/BAMS-D-12-00170.1; Bell, J. E., et al. (2013).
+  U.S. Climate Reference Network soil moisture and temperature observations.
+  *J. Hydrometeorol.*, 14, 977–988, doi:10.1175/JHM-D-12-0146.1.
