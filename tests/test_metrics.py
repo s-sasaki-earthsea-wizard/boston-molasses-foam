@@ -265,3 +265,16 @@ def test_outlet_label_above_the_outlet(tmp_path: Path, figures: list) -> None:
     box = label.get_window_extent(renderer)
     assert box.y0 > ax.transData.transform((0.0, 40.0))[1]
     assert box.y1 <= ax.get_window_extent(renderer).y1
+
+
+def test_front_plot_states_where_the_lines_end(tmp_path: Path, figures: list) -> None:
+    """A front short of the last cell centre (39.75 m) ends at its first point within 1 m of the outlet."""
+    case = _front_case(tmp_path / "case", {"0": 10.0, "10": 39.0, "15": 39.5, "20": 39.5}, step=4)
+    m = evaluate(case)
+    metrics.plot_fronts([m], [load_case(case)], tmp_path / "fronts.svg")
+    (ax,) = figures[0].axes
+    line = _line(ax, metrics.case_label(m, False))
+    assert list(line.get_xdata()) == [0.0, 10.0, 15.0]
+    assert list(line.get_ydata()) == [9.75, 38.75, 39.25]
+    (label,) = [t.get_text() for t in ax.texts if t.get_text().startswith("outlet")]
+    assert label == "outlet (x = 40 m); lines stop at the first front within 1 m"
