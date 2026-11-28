@@ -240,3 +240,13 @@ def test_line_styles_tell_liquid_and_mesh_apart(tmp_path: Path, figures: list) -
     assert len(looks) == len(results)
     assert lines[0]._unscaled_dash_pattern == (0, None)  # molasses on the first mesh: solid
     assert lines[1]._unscaled_dash_pattern == metrics._WATER_STYLE["ls"]  # water on it: dotted
+
+
+def test_plotted_front_is_the_metrics_front(tmp_path: Path, figures: list) -> None:
+    """The plot draws the front series as computed, t = 0 included (a cell centre)."""
+    case = _front_case(tmp_path / "case", {"0": 10.0, "10": 20.0, "20": 30.0}, step=4)
+    m = evaluate(case)
+    metrics.plot_fronts([m], [load_case(case)], tmp_path / "fronts.svg")
+    line = _line(figures[0].axes[0], metrics.case_label(m, False))
+    assert list(line.get_xdata()) == m.front_time
+    assert list(line.get_ydata()) == m.front_x == [9.75, 19.75, 29.75]

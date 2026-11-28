@@ -385,8 +385,9 @@ def plot_fronts(results: list[CaseMetrics], infos: list[CaseInfo], out: Path) ->
     ax.plot(t_ref, info.x_dam + info.front_speed * t_ref, color=pp.REFERENCE, lw=1.0, ls=pp.DASH,
             label=f"Ritter front {info.x_dam:g} m + 2√(gH) t (frictionless)")
     for m, inf, style in zip(results, infos, styles):
-        t = np.array([0.0, *m.front_time[1:]])
-        x = np.array([inf.x_dam, *m.front_x[1:]])
+        # As in the metrics: the front at every written time, t = 0 included,
+        # is a cell centre (Ritter's front starts at the dam face x_dam)
+        t, x = np.array(m.front_time), np.array(m.front_x)
         # Stop at the outlet: the last columns drain over the open boundary,
         # so the front definition no longer tracks a front there
         hit = np.nonzero(x >= inf.grid.extent[1] - OUTLET_MARGIN)[0]
