@@ -6,15 +6,17 @@
 #   scripts/prepare_anim_case.sh SRC_CASE DST_CASE
 #
 # Copies the pristine inputs of SRC_CASE (0.orig/, system/, constant/ without
-# polyMesh/) into DST_CASE. Timestamps are kept, so the mesh and 0/ of
-# DST_CASE are only regenerated when the inputs changed. Results in DST_CASE
+# polyMesh/) into DST_CASE and removes the stamps of its mesh and 0/, so
+# run-stepN regenerates both: the copied inputs keep the timestamps of
+# SRC_CASE, which can be older than a mesh or 0/ that DST_CASE made from
+# other inputs (another step, domain or mesh refinement). Results in DST_CASE
 # are left alone (run-stepN removes them before running). endTime and
 # writeInterval are set by run-stepN (END_TIME, WRITE_INTERVAL).
 # -----------------------------------------------------------------------------
 set -euo pipefail
 
 usage() {
-    sed -n '3,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '3,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
 }
 
@@ -48,3 +50,6 @@ for f in "${SRC}"/constant/*; do
     rm -rf "${DST}/constant/${name}"
     cp -rp "${f}" "${DST}/constant/"
 done
+
+# Stamps of make/case.mk: without them the mesh and 0/ count as out of date
+rm -f "${DST}/constant/polyMesh/.stamp" "${DST}/0/.stamp"
