@@ -75,17 +75,26 @@ class FilmCheck:
 
     A lubrication flow has the half-parabolic profile
     u(y) = 3/2 ubar (2 y/h - y^2/h^2), so h and the mean velocity ubar fix the
-    wall shear 3 mu ubar / h and the surface velocity 3/2 ubar; its flux is
-    -g h^3 (dh/dx) / (3 nu). Each ratio is the median over the body columns:
-    h >= FRONT_DEPTH, at least FILM_MARGIN from the wall and the front, and
-    |ubar| > FILM_MIN_SPEED. NaN where there are no such columns.
+    wall shear rate 3 ubar / h, the wall stress 3 mu0 ubar / h and the surface
+    velocity 3/2 ubar; its flux is -g h^3 (dh/dx) / (3 nu). Each ratio (1 for
+    such a film) is the median over the body columns: h >= FRONT_DEPTH, at
+    least FILM_MARGIN from the wall and the front, and |ubar| > FILM_MIN_SPEED.
+    NaN where there are no such columns.
+
+    Shear rate and stress differ where the first cell holds air: its
+    alpha-weighted viscosity is lower than mu0, so a weak bottom layer shows as
+    a shear rate above 1 and a stress below 1 (an apparent slip). Both are
+    first-cell estimates at the cell centre (dy1/2 from the wall).
 
     Attributes:
         columns: Number of body columns.
         depth: Median depth h [m].
         cells: Median number of cells over the depth.
         reynolds: Median ubar h / nu.
-        wall_shear: First-cell shear u1 / (dy1/2) against 3 ubar / h.
+        wall_shear_rate: First-cell shear rate u1 / (dy1/2) against 3 ubar / h.
+        wall_stress: First-cell stress mu u1 / (dy1/2), with the mixture
+            viscosity mu of the solver (``MixtureViscosity``), against
+            3 mu0 ubar / h.
         surface_velocity: Velocity of the top liquid cell (alpha >= 0.5)
             against 3/2 ubar; columns without such a cell (diffuse liquid)
             are left out.
@@ -103,11 +112,55 @@ class FilmCheck:
     depth: float
     cells: float
     reynolds: float
-    wall_shear: float
+    wall_shear_rate: float
+    wall_stress: float
     surface_velocity: float
     flux: float
     bed_alpha: float
     bed_air: float
+
+
+    @classmethod
+    def empty(cls) -> FilmCheck:
+        """No body columns: every median NaN."""
+        nan = float("nan")
+        return cls(0, nan, nan, nan, nan, nan, nan, nan, nan, nan)
+
+
+@dataclass(frozen=True)
+class MixtureViscosity:
+    """Cell viscosity of the solver, as in updateViscosity.H.
+
+    mu = alpha mu_liquid(T) + (1 - alpha) mu_air with the Andrade
+    mu_liquid(T) = mu0 exp(B (1/T - 1/T0)) when it is temperature dependent;
+    without the T clipping and the muMax cap of the solver, which the
+    reference runs do not reach. alpha is clipped to [0, 1] by load_frame.
+    """
+
+    mu0: float
+    b: float
+    t0: float
+    mu_air: float
+    temperature_dependent: bool
+
+    @classmethod
+    def of_case(cls, info: CaseInfo, transport_properties: str) -> MixtureViscosity:
+        tp = transport_properties
+        return cls(
+            mu0=info.mu0_liquid,
+            b=float(read_entry(tp, "B", block="liquidViscosity")),
+            t0=float(read_entry(tp, "T0", block="liquidViscosity")),
+            mu_air=float(read_entry(tp, "rho", block="air")) * float(read_entry(tp, "nu", block="air")),
+            temperature_dependent=info.temperature_dependent,
+        )
+
+    def __call__(self, alpha: np.ndarray, temperature: np.ndarray | None) -> np.ndarray:
+        """Viscosity [Pa s] of cells with liquid fraction ``alpha`` at ``temperature`` [K]."""
+        if self.temperature_dependent:
+            mu_liquid = self.mu0 * np.exp(self.b * (1.0 / temperature - 1.0 / self.t0))
+        else:
+            mu_liquid = np.full(np.shape(alpha), self.mu0)
+        return alpha * mu_liquid + (1.0 - alpha) * self.mu_air
 
 
 @dataclass
@@ -204,15 +257,22 @@ def _median(values: np.ndarray) -> float:
     return float(np.median(finite)) if finite.size else float("nan")
 
 
-def film_check(frame: Frame, info: CaseInfo) -> FilmCheck:
-    """Compare the body of the current with a viscous film (see FilmCheck)."""
+def film_check(frame: Frame, info: CaseInfo, viscosity: MixtureViscosity) -> FilmCheck:
+    """Compare the body of the current with a viscous film (see FilmCheck).
+
+    Args:
+        frame: Fields of one time step (with the temperature if the
+            viscosity depends on it).
+        info: Case information.
+        viscosity: Mixture viscosity of the case, for the wall stress.
+    """
     grid = info.grid
     nu = info.mu0_liquid / info.rho_liquid
     h = frame.depth()
     q = grid.column_sum(frame.alpha * frame.ux)
     wet = np.flatnonzero(h >= FRONT_DEPTH)
     if wet.size == 0:
-        return FilmCheck(0, *([float("nan")] * 8))
+        return FilmCheck.empty()
     x_front = grid.x[wet.max()]
     with np.errstate(invalid="ignore", divide="ignore"):
         moving = np.abs(np.where(h > 0, q / h, 0.0)) > FILM_MIN_SPEED
@@ -220,7 +280,7 @@ def film_check(frame: Frame, info: CaseInfo) -> FilmCheck:
             & (h >= FRONT_DEPTH) & moving)
     cols = np.flatnonzero(body)
     if cols.size == 0:
-        return FilmCheck(0, *([float("nan")] * 8))
+        return FilmCheck.empty()
     hb = h[cols]
     ubar = q[cols] / hb
     liquid = frame.alpha[:, cols] >= 0.5
@@ -234,13 +294,18 @@ def film_check(frame: Frame, info: CaseInfo) -> FilmCheck:
                    ((1.0 - frame.alpha[:, cols]) * below_top * grid.dy_cells[:, None]).sum(axis=0), np.nan)
     slope = np.array([np.polyfit(grid.x[w], h[w], 1)[0] for w in
                       (np.abs(grid.x - grid.x[i]) <= FILM_SLOPE_HALF for i in cols)])
+    rate = frame.ux[0, cols] / (grid.dy_cells[0] / 2.0)
+    film_rate = 3.0 * ubar / hb
+    temperature = frame.temperature[0, cols] if frame.temperature is not None else None
+    mu_first = viscosity(frame.alpha[0, cols], temperature)
     with np.errstate(invalid="ignore", divide="ignore"):
         return FilmCheck(
             columns=int(cols.size),
             depth=float(np.median(hb)),
             cells=float(np.median(np.searchsorted(grid.y_faces, hb))),
             reynolds=float(np.median(np.abs(ubar) * hb / nu)),
-            wall_shear=float(np.median(frame.ux[0, cols] / (grid.dy_cells[0] / 2.0) / (3.0 * ubar / hb))),
+            wall_shear_rate=float(np.median(rate / film_rate)),
+            wall_stress=float(np.median(mu_first * rate / (info.mu0_liquid * film_rate))),
             surface_velocity=_median(u_surface / (1.5 * ubar)),
             flux=float(np.median(q[cols] / (-info.g * hb**3 * slope / (3.0 * nu)))),
             bed_alpha=float(np.median(frame.alpha[0, cols])),
@@ -285,9 +350,7 @@ def evaluate(
         variant = read_entry(tp, "viscosityVariant")
     except KeyError:
         variant = None
-    b_visc = float(read_entry(tp, "B", block="liquidViscosity"))
-    t0_visc = float(read_entry(tp, "T0", block="liquidViscosity"))
-    mu_air = float(read_entry(tp, "rho", block="air")) * float(read_entry(tp, "nu", block="air"))
+    viscosity = MixtureViscosity.of_case(info, tp)
 
     names = list(info.times)
     need_t = info.solve_energy or info.temperature_dependent
@@ -307,16 +370,9 @@ def evaluate(
         arrival[f"{x_a:g}"] = float(times[reached][0]) if reached.any() else None
 
     def wall_shear(f: Frame) -> float:
-        """Largest first-cell wall shear where h >= FRONT_DEPTH.
-
-        Mixture viscosity as in updateViscosity.H, without its T clipping and
-        muMax cap (neither is reached in these runs).
-        """
-        mu_liquid = np.full(grid.nx, info.mu0_liquid)
-        if info.temperature_dependent:
-            mu_liquid = info.mu0_liquid * np.exp(b_visc * (1.0 / f.temperature[0] - 1.0 / t0_visc))
-        alpha = f.alpha[0]
-        tau = (alpha * mu_liquid + (1.0 - alpha) * mu_air) * np.abs(f.ux[0]) / (dy_wall / 2.0)
+        """Largest first-cell wall shear stress where h >= FRONT_DEPTH."""
+        temperature = f.temperature[0] if f.temperature is not None else None
+        tau = viscosity(f.alpha[0], temperature) * np.abs(f.ux[0]) / (dy_wall / 2.0)
         wet = f.depth() >= FRONT_DEPTH
         return float(tau[wet].max()) if wet.any() else 0.0
 
@@ -331,7 +387,7 @@ def evaluate(
         cooling = max(drops) if drops else 0.0
         if info.temperature_dependent:
             t_i = info.t_liquid
-            mu_change = float(np.exp(b_visc * (1.0 / (t_i - cooling) - 1.0 / t_i)) - 1.0)
+            mu_change = float(np.exp(viscosity.b * (1.0 / (t_i - cooling) - 1.0 / t_i)) - 1.0)
 
     nu0 = info.mu0_liquid / info.rho_liquid
     area0 = float(volume[0])
@@ -366,7 +422,7 @@ def evaluate(
             times, info.x_wall + huppert_front(times, area0, info.g, nu0, FRONT_DEPTH), info.x_wall, x_end),
         wall_depth_end=float(wall_depth),
         huppert_wall_depth_end=huppert_wall,
-        film={f"{t:g}": film_check(frames[i], info)
+        film={f"{t:g}": film_check(frames[i], info, viscosity)
               for t in front_at if (i := _index(times, t)) is not None},
         profiles=profiles,
         profile_x=grid.x.tolist(),
@@ -394,7 +450,8 @@ def case_label(m: CaseMetrics, with_mesh: bool) -> str:
 def _film(c: FilmCheck | None) -> str:
     if c is None or c.columns == 0:
         return "–"
-    return f"{c.reynolds:.2g}, {c.flux:.2f}, {c.wall_shear:.2f}, {c.surface_velocity:.2f}"
+    return (f"{c.reynolds:.2g}; {c.flux:.2f}; {c.wall_shear_rate:.2f}; {c.wall_stress:.2f}; "
+            f"{c.surface_velocity:.2f}")
 
 
 def _bed(c: FilmCheck | None) -> str:
@@ -445,7 +502,8 @@ def table(results: list[CaseMetrics]) -> str:
              [f"{_fmt(m.wall_depth_end, '.2f')}, {_fmt(m.huppert_wall_depth_end, '.2f')}" for m in results]),
         ]
         for key in results[0].front_at:
-            rows.append((f"film at t = {key} s: Re, q/q_lub, τ₁/(3μū/h), u_s/(3ū/2) (all 1 for a viscous film)",
+            rows.append((f"film at t = {key} s: Re; q/q_lub; γ̇₁/(3ū/h); τ₁/(3μ₀ū/h); u_s/(3ū/2) "
+                         "(ratios 1 for a viscous film)",
                          [_film(m.film.get(key)) for m in results]))
         for key in results[0].front_at:
             rows.append((f"bed at t = {key} s: first-cell α, air below the surface [cm] (1, 0 when wetted)",

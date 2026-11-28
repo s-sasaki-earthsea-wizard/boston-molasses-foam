@@ -34,18 +34,21 @@ def test_evaluate_initial_fields_only(tmp_path: Path) -> None:
     assert m.volume0 == pytest.approx(10.0 * COLUMN)
 
 
-def _film_case(tmp_path: Path, alpha_body: float) -> Path:
+def _film_case(tmp_path: Path, alpha_body: float, first_alpha: float | None = None) -> Path:
     """A current 0.8-0.4 m deep over 100 m, half-parabolic, at t = 60 s.
 
     With ``alpha_body`` < 1 the liquid is spread as that fraction over the
     cells below 0.8/alpha_body of the depth, so that no cell is liquid
-    (alpha >= 0.5) when ``alpha_body`` < 0.5.
+    (alpha >= 0.5) when ``alpha_body`` < 0.5. ``first_alpha`` replaces the
+    alpha of the first cell under the current (air at the bottom).
     """
     x_faces = np.linspace(0.0, 120.0, 121)
     x = 0.5 * (x_faces[:-1] + x_faces[1:])
     depth = np.where(x < 100.0, 0.8 - 0.4 * x / 100.0, 0.0)
     y = 0.5 * (Y_FACES[:-1] + Y_FACES[1:])
     alpha = column_alpha(Y_FACES, depth / alpha_body) * alpha_body
+    if first_alpha is not None:
+        alpha[0, depth > 0] = first_alpha
     spread = np.maximum(depth / alpha_body, 1e-9)
     ux = np.where(y[:, None] < spread[None, :],
                   1e-2 * (2.0 * y[:, None] / spread[None, :] - (y[:, None] / spread[None, :]) ** 2), 0.0)
@@ -61,6 +64,16 @@ def test_film_check_wetted_body(tmp_path: Path) -> None:
     assert film.bed_alpha == pytest.approx(1.0)
     assert film.bed_air == pytest.approx(0.0, abs=1e-12)
     assert film.surface_velocity == pytest.approx(1.0, abs=0.05)
+    # Half-parabola sampled at dy1/2: 1 - dy1/(4h) of the wall value
+    assert film.wall_shear_rate == pytest.approx(1.0, abs=0.03)
+    assert film.wall_stress == pytest.approx(film.wall_shear_rate, rel=1e-9)
+
+
+def test_film_check_stress_with_air_in_the_first_cell(tmp_path: Path) -> None:
+    """Half air in the first cell halves its viscosity, so the stress against the shear rate."""
+    film = evaluate(_film_case(tmp_path, 1.0, first_alpha=0.5), front_at=(60.0,)).film["60"]
+    assert film.bed_alpha == pytest.approx(0.5)
+    assert film.wall_stress == pytest.approx(0.5 * film.wall_shear_rate, rel=1e-3)
 
 
 def test_film_check_without_liquid_cells(tmp_path: Path) -> None:
