@@ -17,7 +17,8 @@ bottom cells are dragged ahead of the front by the air, because a cell has
 one velocity (see the README, "Reference runs").
 
 The spreading stage is compared with Huppert's (1982) similarity solution of a
-2D viscous current of the initial area (``post.analytic.huppert``).
+2D viscous current of the initial area (``post.analytic.huppert``), with its
+front taken at the same depth threshold as the simulated front.
 """
 
 from __future__ import annotations
@@ -129,6 +130,7 @@ class CaseMetrics:
     front_at: dict[str, float]
     huppert_at: dict[str, float]
     growth_exponent: float
+    huppert_exponent: float
     wall_depth_end: float
     huppert_wall_depth_end: float
     film: dict[str, FilmCheck]
@@ -238,7 +240,8 @@ def growth_exponent(times: np.ndarray, front: np.ndarray, x_wall: float, x_end: 
     """Slope of ln(x_f - x_wall) against ln t over the second half of the run.
 
     NaN if the front comes within ``OUTLET_MARGIN`` of the outlet by the end,
-    since the outflow then sets the front. Huppert's viscous current has 1/5.
+    since the outflow then sets the front. Huppert's nose x_N grows with 1/5;
+    his front at a depth threshold grows more slowly as the current thins.
     """
     if not np.isfinite(front).all() or (front >= x_end - OUTLET_MARGIN).any():
         return float("nan")
@@ -259,7 +262,8 @@ def evaluate(
     Args:
         path: Case directory.
         arrival_x: Positions [m] whose front arrival times are reported.
-        front_at: Times [s] at which the front and Huppert's x_N are reported.
+        front_at: Times [s] at which the front and Huppert's front (at the same
+            depth threshold) are reported.
         profile_times: Times [s] whose depth profiles are kept.
     """
     info: CaseInfo = load_case(path)
@@ -341,8 +345,11 @@ def evaluate(
         front_speed=speed,
         arrival=arrival,
         front_at={f"{t:g}": _at(times, front, t) for t in front_at},
-        huppert_at={f"{t:g}": info.x_wall + float(huppert_front(t, area0, info.g, nu0)) for t in front_at},
+        huppert_at={f"{t:g}": info.x_wall + float(huppert_front(t, area0, info.g, nu0, FRONT_DEPTH))
+                    for t in front_at},
         growth_exponent=growth_exponent(times, front, info.x_wall, x_end),
+        huppert_exponent=growth_exponent(
+            times, info.x_wall + huppert_front(times, area0, info.g, nu0, FRONT_DEPTH), info.x_wall, x_end),
         wall_depth_end=float(wall_depth),
         huppert_wall_depth_end=float(huppert_wall.depth[0]),
         film={f"{t:g}": film_check(frames[i], info)
@@ -413,13 +420,13 @@ def table(results: list[CaseMetrics]) -> str:
     for key in results[0].arrival:
         rows.append((f"front at x = {key} m [s]", [_fmt(m.arrival.get(key), "g") for m in results]))
     for key in results[0].front_at:
-        rows.append((f"front at t = {key} s, Huppert x_N [m]",
+        rows.append((f"front at t = {key} s, Huppert at h = {FRONT_DEPTH:g} m [m]",
                      [f"{_fmt(m.front_at.get(key), '.1f')}, {_fmt(m.huppert_at.get(key), '.1f')}"
                       for m in results]))
     if results[0].front_at:
         rows += [
-            ("growth exponent d ln x / d ln t, 2nd half (Huppert 0.2)",
-             [_fmt(m.growth_exponent, ".3f") for m in results]),
+            (f"growth exponent d ln x / d ln t, 2nd half; Huppert at h = {FRONT_DEPTH:g} m (x_N: 0.2)",
+             [f"{_fmt(m.growth_exponent, '.3f')}; {_fmt(m.huppert_exponent, '.3f')}" for m in results]),
             ("depth at the wall at the end, Huppert [m]",
              [f"{m.wall_depth_end:.2f}, {m.huppert_wall_depth_end:.2f}" for m in results]),
         ]
@@ -502,13 +509,13 @@ def _save(fig, results: list[CaseMetrics], out: Path) -> None:
     fig.savefig(out, dpi=150, metadata=metadata)
 
 
-def _huppert_handle(lw: float):
+def _huppert_handle(lw: float, what: str = "viscous current"):
     from matplotlib.lines import Line2D
 
     from post import plot as pp
 
     return Line2D([], [], color=pp.INK_SECONDARY, lw=lw, ls=_HUPPERT_LS,
-                  label="Huppert (1982) viscous current, same colour (dotted)")
+                  label=f"Huppert (1982) {what}, same colour (dotted)")
 
 
 def plot_fronts(
@@ -520,7 +527,8 @@ def plot_fronts(
         results: Metrics of the cases.
         infos: Case information, in the same order.
         out: Output file (.svg or .png).
-        with_huppert: Also draw Huppert's viscous front of each viscous case
+        with_huppert: Also draw Huppert's viscous front of each viscous case,
+            taken at the same depth threshold (``FRONT_DEPTH``),
             from ``HUPPERT_FROM`` on.
     """
     from post import plot as pp
@@ -546,7 +554,7 @@ def plot_fronts(
         if with_huppert and m.step is not None and m.step >= 4 and m.mu0 not in drawn:
             drawn.add(m.mu0)
             t_h = t_ref[t_ref >= HUPPERT_FROM]
-            ax.plot(t_h, inf.x_wall + huppert_front(t_h, m.volume0, inf.g, m.mu0 / m.rho),
+            ax.plot(t_h, inf.x_wall + huppert_front(t_h, m.volume0, inf.g, m.mu0 / m.rho, FRONT_DEPTH),
                     color=style["color"], lw=1.2, ls=_HUPPERT_LS)
     ax.axhline(x_end, color=pp.AXIS, lw=0.8)
     ax.text(t_end * 0.99, x_end - 3, f"outlet (x = {x_end:g} m)", ha="right", va="top",
@@ -556,7 +564,7 @@ def plot_fronts(
     ax.grid(True, color=pp.GRIDLINE, lw=0.6)
     handles, _ = ax.get_legend_handles_labels()
     if drawn:
-        handles.append(_huppert_handle(1.2))
+        handles.append(_huppert_handle(1.2, f"viscous current, depth ≥ {FRONT_DEPTH:g} m"))
     ax.legend(handles=handles, loc="lower right", fontsize=7.5)
     _save(fig, results, out)
 
@@ -620,7 +628,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--arrival", type=float, nargs="+", default=list(ARRIVAL_X), metavar="X",
                    help=f"positions [m] of the arrival times (default {' '.join(f'{x:g}' for x in ARRIVAL_X)})")
     p.add_argument("--front-at", type=float, nargs="+", default=[], metavar="T",
-                   help="times [s] of the front against Huppert's x_N (adds the spreading rows)")
+                   help="times [s] of the front against Huppert's at the same depth (adds the spreading rows)")
     p.add_argument("--huppert", action="store_true",
                    help="draw Huppert's viscous solution in the plots of viscous cases")
     p.add_argument("--profiles", type=Path, help="plot depth profiles at --profile-times to this file")

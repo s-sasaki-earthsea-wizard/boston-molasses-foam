@@ -90,7 +90,9 @@ class HuppertSolution(NamedTuple):
     x_front: float
 
 
-def huppert_front(t: np.ndarray | float, area: float, g: float, nu: float) -> np.ndarray:
+def huppert_front(
+    t: np.ndarray | float, area: float, g: float, nu: float, depth: float = 0.0
+) -> np.ndarray:
     """Front x_N(t) of a 2D viscous gravity current of fixed area [m].
 
     Huppert (1982), J. Fluid Mech. 121, 43-58:
@@ -101,8 +103,19 @@ def huppert_front(t: np.ndarray | float, area: float, g: float, nu: float) -> np
     at x = 0 under a fluid of negligible density, at low Reynolds number
     (lubrication approximation). It forgets the release, so it applies only
     once the current is long and thin compared with the initial column.
+
+    With ``depth`` > 0 the result is instead the last position where the
+    similarity profile (see ``huppert``) is at least ``depth`` deep, i.e. a
+    front taken at a depth threshold; it lags x_N more as the current thins,
+    and is NaN once the current is shallower everywhere.
     """
-    return HUPPERT_ETA_N * (g * area**3 * np.asarray(t, dtype=float) / (3.0 * nu)) ** 0.2
+    scale = (g * area**3 * np.asarray(t, dtype=float) / (3.0 * nu)) ** 0.2
+    if depth <= 0.0:
+        return HUPPERT_ETA_N * scale
+    # h = (A / scale) (3/10)^(1/3) (eta_N^2 - xi^2)^(1/3) solved for xi
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rest = HUPPERT_ETA_N**2 - (depth * scale / (area * 0.3 ** (1.0 / 3.0))) ** 3
+        return np.where(rest >= 0.0, scale * np.sqrt(rest), np.nan)
 
 
 def huppert(x: np.ndarray, t: float, area: float, g: float, nu: float, x_wall: float = 0.0) -> HuppertSolution:
