@@ -15,14 +15,14 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Phase 1 is the liquid: water in Steps 1-3, molasses in Step 4. The name
+// Phase 1 is the liquid: water in Steps 1-3, molasses in Steps 4-5. The name
 // "water" is kept for all steps so that the phase fraction is alpha.water.
 //
-// The values below are switched by scripts/set_step.sh <1-4>; entries are
+// The values below are switched by scripts/set_step.sh <1-5>; entries are
 // replaced in place, so keep one "key value;" per line.
 
 activeStep      1;
-viscosityVariant none;              // Step 4 molasses viscosity: low, central, high
+viscosityVariant none;              // Steps 4-5 molasses viscosity: low, central, high
 
 phases          (water air);
 

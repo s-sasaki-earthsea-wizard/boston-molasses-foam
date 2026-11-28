@@ -128,7 +128,12 @@ def _blend_liquid(alpha: np.ndarray, rgba: np.ndarray) -> np.ndarray:
 
 def _draw_strip(ax: Axes, rgb: np.ndarray, frame: Frame, info: CaseInfo) -> None:
     grid = info.grid
-    ax.imshow(rgb, origin="lower", extent=grid.extent, interpolation="nearest", aspect="equal")
+    if grid.uniform:
+        ax.imshow(rgb, origin="lower", extent=grid.extent, interpolation="nearest", aspect="equal")
+    else:
+        # A graded mesh needs the cell faces; an image assumes equal cells
+        ax.pcolormesh(grid.x_faces, grid.y_faces, rgb, shading="flat")
+        ax.set_aspect("equal")
     if frame.alpha.min() < 0.5 < frame.alpha.max():
         ax.contour(grid.x, grid.y, frame.alpha, levels=[0.5], colors=INK, linewidths=0.8)
     ax.set_xlim(grid.extent[0], grid.extent[1])
@@ -238,7 +243,7 @@ def describe_case(info: CaseInfo) -> tuple[str, str]:
         f"liquid ρ = {info.rho_liquid:g} kg/m³, μ₀ = {mu0}"
         f" · energy equation {'on' if info.solve_energy else 'off'}"
         f" · viscosity {'μ(T)' if info.temperature_dependent else 'constant'}"
-        f" · 2D VOF, Δ = {info.grid.dx:g} m"
+        f" · 2D VOF, {info.grid.spacing_label()}"
     )
     return title, subtitle
 

@@ -15,7 +15,7 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Initial liquid temperature, switched by scripts/set_step.sh <1-4>
+// Initial liquid temperature, switched by scripts/set_step.sh <1-5>
 liquidT         293.15;             // [K]
 
 defaultFieldValues

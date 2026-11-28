@@ -1,10 +1,10 @@
 """Minimal readers for OpenFOAM ASCII case data.
 
-Only what the animations need is supported: the internalField of
-volScalarField / volVectorField files (uniform or nonuniform, plain or
-gzip-compressed), flat dictionary entries, time directory names and the
-uniform 2D grid recovered from the cell centres written by
-``postProcess -func writeCellCentres``.
+Only what the animations and the metrics need is supported: the
+internalField of volScalarField / volVectorField files (uniform or nonuniform,
+plain or gzip-compressed), flat dictionary entries, time directory names, the
+mesh points and the single-layer 2D grid (uniform or graded) recovered from the
+cell centres written by ``postProcess -func writeCellCentres`` and the points.
 """
 
 from __future__ import annotations
@@ -127,17 +127,21 @@ def read_gravity(case: Path) -> float:
 
 @dataclass(frozen=True)
 class Grid2D:
-    """Uniform single-layer (x-y) structured grid.
+    """Single-layer (x-y) structured grid, uniform or graded.
 
     Attributes:
         x: Cell-centre coordinates along x, shape (nx,).
         y: Cell-centre coordinates along y, shape (ny,).
         order: Cell indices in row-major (y, x) order, shape (nx*ny,).
+        x_faces: Cell-face coordinates along x, shape (nx + 1,).
+        y_faces: Cell-face coordinates along y, shape (ny + 1,).
     """
 
     x: np.ndarray
     y: np.ndarray
     order: np.ndarray
+    x_faces: np.ndarray
+    y_faces: np.ndarray
 
     @property
     def nx(self) -> int:
@@ -152,74 +156,184 @@ class Grid2D:
         return self.order.size
 
     @property
+    def dx_cells(self) -> np.ndarray:
+        """Cell widths along x, shape (nx,)."""
+        return np.diff(self.x_faces)
+
+    @property
+    def dy_cells(self) -> np.ndarray:
+        """Cell heights along y, shape (ny,)."""
+        return np.diff(self.y_faces)
+
+    @property
+    def uniform(self) -> bool:
+        """Whether the cells have one width and one height."""
+        return _is_uniform(self.dx_cells) and _is_uniform(self.dy_cells)
+
+    @property
     def dx(self) -> float:
-        return float(self.x[1] - self.x[0])
+        """Cell width along x.
+
+        Raises:
+            ValueError: If the widths vary (graded along x).
+        """
+        return _uniform_spacing(self.dx_cells, "x")
 
     @property
     def dy(self) -> float:
-        return float(self.y[1] - self.y[0])
+        """Cell height along y.
+
+        Raises:
+            ValueError: If the heights vary (graded along y).
+        """
+        return _uniform_spacing(self.dy_cells, "y")
 
     @property
     def extent(self) -> tuple[float, float, float, float]:
-        """Cell-face bounds (x0, x1, y0, y1), as used by imshow."""
+        """Domain bounds (x0, x1, y0, y1), as used by imshow."""
         return (
-            float(self.x[0] - self.dx / 2),
-            float(self.x[-1] + self.dx / 2),
-            float(self.y[0] - self.dy / 2),
-            float(self.y[-1] + self.dy / 2),
+            float(self.x_faces[0]),
+            float(self.x_faces[-1]),
+            float(self.y_faces[0]),
+            float(self.y_faces[-1]),
         )
 
+    def cell_areas(self) -> np.ndarray:
+        """Cell areas in the x-y plane, shape (ny, nx)."""
+        return self.dy_cells[:, None] * self.dx_cells[None, :]
+
+    def column_sum(self, values: np.ndarray) -> np.ndarray:
+        """Sum of ``values`` times the cell height over each column, shape (nx,).
+
+        Args:
+            values: Per-cell values of shape (ny, nx).
+        """
+        dy = self.dy_cells
+        if _is_uniform(dy):
+            # Scalar product keeps uniform-grid results bit-identical to sum * dy
+            return values.sum(axis=0) * float(dy[0])
+        return (values * dy[:, None]).sum(axis=0)
+
+    def integrate(self, values: np.ndarray) -> float:
+        """Area integral of per-cell values of shape (ny, nx)."""
+        if self.uniform:
+            return float(values.sum() * (self.dx * self.dy))
+        return float((values * self.cell_areas()).sum())
+
     def spacing_label(self) -> str:
-        """Cell size for captions: "Δ = 0.5 m", or per axis if the cells are not square."""
-        dx, dy = f"{self.dx:.3g} m", f"{self.dy:.3g} m"
-        return f"Δ = {dx}" if dx == dy else f"Δx = {dx}, Δy = {dy}"
+        """Cell size for captions: "Δ = 0.5 m", or per axis with ranges if graded."""
+        def size(widths: np.ndarray) -> str:
+            lo, hi = float(widths.min()), float(widths.max())
+            return f"{lo:.3g} m" if _is_uniform(widths) else f"{lo:.3g}–{hi:.3g} m"
+
+        dx, dy = size(self.dx_cells), size(self.dy_cells)
+        return f"Δ = {dx}" if dx == dy and self.uniform else f"Δx = {dx}, Δy = {dy}"
 
     def to_2d(self, values: np.ndarray) -> np.ndarray:
         """Reorder per-cell values into shape (ny, nx) or (ny, nx, ncomp)."""
         return values[self.order].reshape(self.ny, self.nx, *values.shape[1:])
 
     @classmethod
-    def from_cell_centres(cls, centres: np.ndarray) -> Grid2D:
+    def from_cell_centres(
+        cls,
+        centres: np.ndarray,
+        x_faces: np.ndarray | None = None,
+        y_faces: np.ndarray | None = None,
+    ) -> Grid2D:
         """Recover the grid from cell centres of shape (n_cells, 3).
 
+        Args:
+            centres: Cell centres.
+            x_faces: Face coordinates along x; derived from uniformly spaced
+                centres when omitted.
+            y_faces: Face coordinates along y; as ``x_faces``.
+
         Raises:
-            ValueError: If the cells do not form a single-layer x-y grid.
-            NotImplementedError: If the spacing is not uniform (graded mesh).
+            ValueError: If the cells do not form a single-layer x-y grid, or
+                the faces do not enclose the centres.
+            NotImplementedError: If the spacing is not uniform and no faces
+                are given (a graded mesh needs the mesh points).
         """
-        tol = 1e-6 * float(np.ptp(centres[:, :2], axis=0).max())
         axes = []
-        for name, c in (("x", centres[:, 0]), ("y", centres[:, 1])):
-            s = np.sort(c)
-            unique = s[np.concatenate(([True], np.diff(s) > tol))]
+        for name, c, faces in (("x", centres[:, 0], x_faces), ("y", centres[:, 1], y_faces)):
+            # Per axis: a long domain must not merge thin cells along the other
+            tol = _merge_tolerance(c)
+            unique = _unique_sorted(c, tol)
             if unique.size < 2:
                 raise ValueError(f"the mesh has a single cell along {name}")
-            spacing = np.diff(unique)
-            if not np.allclose(spacing, spacing[0], rtol=1e-6, atol=tol):
-                raise NotImplementedError(
-                    f"non-uniform cell spacing along {name}: graded meshes are not supported yet"
-                )
-            axes.append(unique)
-        xs, ys = axes
+            if faces is None:
+                spacing = np.diff(unique)
+                if not np.allclose(spacing, spacing[0], rtol=1e-6, atol=tol):
+                    raise NotImplementedError(
+                        f"non-uniform cell spacing along {name}: the face coordinates are needed"
+                    )
+                faces = np.concatenate(([unique[0] - spacing[0] / 2], unique + spacing[0] / 2))
+            elif faces.size != unique.size + 1 or not np.allclose(
+                0.5 * (faces[:-1] + faces[1:]), unique, rtol=0, atol=10 * tol
+            ):
+                raise ValueError(f"the faces along {name} do not enclose the cell centres")
+            axes.append((unique, np.asarray(faces, dtype=float)))
+        (xs, xf), (ys, yf) = axes
         if xs.size * ys.size != len(centres):
             raise ValueError(
                 f"{len(centres)} cells do not form a single-layer {xs.size} x {ys.size} grid"
             )
 
-        ix = np.rint((centres[:, 0] - xs[0]) / (xs[1] - xs[0])).astype(int)
-        iy = np.rint((centres[:, 1] - ys[0]) / (ys[1] - ys[0])).astype(int)
+        ix = np.searchsorted(xf, centres[:, 0]) - 1
+        iy = np.searchsorted(yf, centres[:, 1]) - 1
         linear = iy * xs.size + ix
         if np.unique(linear).size != linear.size:
             raise ValueError("cell centres do not map one-to-one onto the grid")
-        return cls(xs, ys, np.argsort(linear))
+        return cls(xs, ys, np.argsort(linear), xf, yf)
+
+
+def _merge_tolerance(values: np.ndarray) -> float:
+    """Coordinates closer than this along one axis are the same [m]."""
+    return 1e-6 * float(np.ptp(values))
+
+
+def _unique_sorted(values: np.ndarray, tol: float) -> np.ndarray:
+    """Sorted distinct values, merging those closer than ``tol``."""
+    s = np.sort(values)
+    return s[np.concatenate(([True], np.diff(s) > tol))]
+
+
+def _is_uniform(widths: np.ndarray) -> bool:
+    return bool(np.allclose(widths, widths[0], rtol=1e-6, atol=0))
+
+
+def _uniform_spacing(widths: np.ndarray, name: str) -> float:
+    if not _is_uniform(widths):
+        raise ValueError(f"the cells are graded along {name}; use the per-cell sizes")
+    return float(widths[0])
+
+
+def read_points(case: Path) -> np.ndarray:
+    """Read the mesh points ``constant/polyMesh/points``, shape (n_points, 3)."""
+    path = None
+    for candidate in ("points.gz", "points"):
+        if (case / "constant" / "polyMesh" / candidate).is_file():
+            path = case / "constant" / "polyMesh" / candidate
+            break
+    if path is None:
+        raise FileNotFoundError(f"no mesh points in {case / 'constant' / 'polyMesh'}")
+    text = strip_comments(read_text(path))
+    body = text[text.index("}") + 1:]  # skip the FoamFile header
+    m = re.search(r"(\d+)\s*\(", body)
+    if not m:
+        raise ValueError(f"{path}: no point list found")
+    n = int(m.group(1))
+    values = body[m.end():].replace("(", " ").replace(")", " ").split(None, 3 * n)[: 3 * n]
+    return np.array(values, dtype=float).reshape(n, 3)
 
 
 def read_grid(case: Path) -> Grid2D:
-    """Read the cell centres from ``0/C`` and recover the 2D grid.
+    """Read the cell centres from ``0/C`` and the faces from the mesh points.
 
     Raises:
         FileNotFoundError: If ``0/C`` is missing; it is written by
-            ``postProcess -func writeCellCentres -time 0`` (``make anim``
-            runs it).
+            ``postProcess -func writeCellCentres -time 0`` (``make anim`` and
+            ``make metrics`` run it).
     """
     try:
         path = field_path(case / "0", "C")
@@ -227,4 +341,12 @@ def read_grid(case: Path) -> Grid2D:
         raise FileNotFoundError(
             f"{err}; run 'postProcess -func writeCellCentres -time 0' in the case first"
         ) from None
-    return Grid2D.from_cell_centres(read_internal_field(path))
+    centres = read_internal_field(path)
+    try:
+        points = read_points(case)
+    except FileNotFoundError:
+        return Grid2D.from_cell_centres(centres)
+    x, y = points[:, 0], points[:, 1]
+    return Grid2D.from_cell_centres(
+        centres, _unique_sorted(x, _merge_tolerance(x)), _unique_sorted(y, _merge_tolerance(y))
+    )
