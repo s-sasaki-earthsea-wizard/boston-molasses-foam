@@ -44,6 +44,7 @@ image is built).
 | `readme-fronts` | Plot the fronts of the reference runs to `docs/media/fronts-step4.svg` |
 | `clean`         | Remove time directories, solver logs, `postProcessing/`              |
 | `clean-all`     | `clean` + mesh, `0/`, `build/` and wmake objects                     |
+| `test`          | Tests of `post/` (host: uv + pytest; no OpenFOAM)                    |
 
 Container commands are wrapped as
 `docker compose -f docker/docker-compose.yml run --rm -T openfoam ...`,
@@ -109,6 +110,7 @@ services:
 │   ├── animate.py           # CLI: frames -> mp4 + GIF
 │   └── metrics.py           # CLI: front, volume, bounds of reference runs; front plot
 ├── docs/media/              # README animation and figures
+├── tests/                   # pytest: post/ on small synthetic cases
 ├── solver/interThermalFoam/
 │   ├── Make/{files,options}
 │   ├── interThermalFoam.C   # time loop

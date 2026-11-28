@@ -16,3 +16,13 @@ package = false
 # The project lives on a network share; the uv cache does not, so
 # hardlinks are not possible
 link-mode = "copy"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# post/ is imported from the project root, as with python -m post.metrics
+pythonpath = ["."]
