@@ -149,9 +149,15 @@ def _interpolate(times: np.ndarray, values: np.ndarray, t: float) -> float:
     return float(np.interp(t, times, values))
 
 
-def evaluate(path: Path) -> CaseMetrics:
-    """Compute the metrics of one case from its written time steps."""
-    info: CaseInfo = load_case(path)
+def evaluate(path: Path, info: CaseInfo | None = None) -> CaseMetrics:
+    """Compute the metrics of one case from its written time steps.
+
+    Args:
+        path: Case directory.
+        info: The case's ``load_case(path)``, if already read.
+    """
+    if info is None:
+        info = load_case(path)
     grid = info.grid
     tp = read_text(path / "constant" / "transportProperties")
     try:
@@ -404,7 +410,9 @@ def main(argv: list[str] | None = None) -> int:
         for line in problems:
             print(f"Error: {line}", file=sys.stderr)
         return 1
-    results = [evaluate(c) for c in args.cases]
+    # Read once: the plot needs the cases' geometry as well
+    infos = [load_case(c) for c in args.cases]
+    results = [evaluate(c, inf) for c, inf in zip(args.cases, infos)]
     print(f"Front: last column with depth >= {FRONT_DEPTH:g} m\n")
     print(table(results))
     if args.json:
@@ -413,7 +421,7 @@ def main(argv: list[str] | None = None) -> int:
         args.json.write_text(json.dumps(_json_safe([asdict(m) for m in results]), indent=1, allow_nan=False))
         print(f"\nwrote {args.json}")
     if args.plot:
-        plot_fronts(results, [load_case(c) for c in args.cases], args.plot)
+        plot_fronts(results, infos, args.plot)
         print(f"wrote {args.plot}")
     return 0
 

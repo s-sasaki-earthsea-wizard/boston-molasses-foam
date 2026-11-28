@@ -167,3 +167,12 @@ def test_alpha_bounds_with_sign(tmp_path: Path, alpha_max: str, bounds: str) -> 
     log = case / "log.interThermalFoam.step4"
     log.write_text(f"Time = 20\nMin(alpha.water) = -3.9e-05  Max(alpha.water) = {alpha_max}\nEnd\n")
     assert f"| alpha bounds (log) | {bounds} |" in metrics.table([evaluate(case)])
+
+
+def test_plot_reads_each_case_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cases = [_front_case(tmp_path / name, {"0": 10.0, "20": 30.0}, step=4) for name in ("a", "b")]
+    read: list[Path] = []
+    load = metrics.load_case
+    monkeypatch.setattr(metrics, "load_case", lambda path: read.append(path) or load(path))
+    assert metrics.main([*map(str, cases), "--plot", str(tmp_path / "fronts.svg")]) == 0
+    assert read == cases
