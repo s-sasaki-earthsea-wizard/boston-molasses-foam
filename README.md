@@ -401,7 +401,7 @@ above.*
 | Front / Huppert's front at t = 120 / 600 s          | 1.42 / 1.15      | 1.31 / 1.12      | 1.21 / 1.08      |
 | Growth exponent d ln x / d ln t, 300–600 s; Huppert's front | 0.063; 0.178 | 0.107; 0.188  | 0.138; 0.195     |
 | Depth at the wall at 600 s, Huppert [m]             | 0.49, 0.57       | 0.64, 0.70       | 0.86, 0.91       |
-| Viscous-film check at 600 s: Re; q / q_lub; τ₁ / (3μū/h) | 0.79; 1.05; 1.02 | 0.42; 1.05; 1.13 | 0.15; 1.24; 1.33 |
+| Viscous-film check at 600 s: Re; q / q_lub; γ̇₁ / (3ū/h); τ₁ / (3μ₀ū/h) | 0.79; 1.05; 1.02; 0.94 | 0.42; 1.05; 1.13; 0.85 | 0.15; 1.24; 1.33; 0.81 |
 | First-cell α under the body at 120 / 600 s          | 0.74 / 0.96      | 0.56 / 0.89      | 0.44 / 0.63      |
 | Largest deviation of the liquid area [m²]           | 0.038            | 0.016            | 0.010            |
 | Max cooling of liquid cells (alpha > 0.99) [K]      | 0.015            | 0.013            | 0.015            |
@@ -413,9 +413,11 @@ above.*
 - The first 120 s are identical to those of 120 s runs with the same inputs
   (fields compared at 30 and 120 s).
 - The viscous-film check takes the body of the current (h ≥ 0.25 m, at least
-  20 m from the wall and the front) and compares its flux and first-cell
-  shear with those of a half-parabolic lubrication profile of the same depth
-  and mean velocity (medians; `FilmCheck` in `post/metrics.py`).
+  20 m from the wall and the front) and compares its flux, its first-cell
+  shear rate γ̇₁ = u₁ / (Δy₁/2) and its first-cell stress τ₁ = μ γ̇₁, with the
+  alpha-weighted mixture viscosity μ of the solver, with those of a
+  half-parabolic lubrication profile of the same depth and mean velocity,
+  for which each ratio is 1 (medians; `FilmCheck` in `post/metrics.py`).
 
 **Approach to the viscous current.** Up to ~10 s the fronts follow Step 4.
 By 30 s the liquid is a nearly flat layer, 0.55–1.1 m deep and 1.4–1.6 times
@@ -430,14 +432,19 @@ origin shifted by t₀, fitted at 120 s (t₀ = 715, 361 and 202 s), gives 325,
 259 and 197 m at 600 s; the runs reach 329, 266 and 201 m.
 
 **Air under the current.** During the wave stage the liquid overruns air at
-the bottom: under the body, the first cell (0.05 m) holds 35–65 % air from
-~5 s on (median alpha 0.34–0.65 at 5 s, 0.44–0.74 at 120 s, i.e. 1.6–3.2 cm
-of air). The viscosity is alpha-weighted, so this layer acts as a slip layer:
-at 120 s the first-cell shear is 1.3–1.8 times, and the flux up to 1.25
-times, that of a viscous film of the same depth. Later the air rises into
-the layer as a diffuse mixture (alpha ≈ 0.93–0.99 over the depth), the
-bottom is wetted again in the low and central runs, and the ratios approach
-1. See [Known limitations](#known-limitations).
+the bottom. Under the body, the first cell (0.05 m) holds 35–66 % air at 5 s
+(median alpha 0.65, 0.52 and 0.34 for low, central and high) and 26–56 % at
+120 s (alpha 0.74, 0.56 and 0.44). At 120 s that is 1.3–2.8 cm of air in the
+first cell, and 1.6–3.2 cm counting all the air below the top liquid cell.
+The viscosity is alpha-weighted, so the first cell is a weak layer: at
+120 s its shear rate is 1.3–1.8 times that of a viscous film of the same
+depth and mean velocity, but its stress only 0.8–0.9 times, and the flux of
+the body is up to 1.25 times the film's. These ratios are consistent with
+an apparent slip at the bottom; they do not measure its effect on the front.
+Later the air rises into the layer as a diffuse mixture (alpha ≈ 0.93–0.99
+over the depth) and the bottom is wetted again in the low and central runs;
+by 600 s the low run is within 6 % of the film (shear rate 1.02, stress
+0.94, flux 1.05). See [Known limitations](#known-limitations).
 
 **Mesh check.** Step 5 central for 120 s on a mesh with every cell twice as
 wide and tall (400 × 57 cells,
@@ -448,7 +455,7 @@ wide and tall (400 × 57 cells,
 | Front speed 3–8 s [m/s]                 | 12.3             | 12.6              |
 | Front at t = 30 / 60 / 120 s [m]        | 202 / 217 / 228  | 211 / 224 / 235   |
 | Depth at the wall at 120 s [m]          | 0.73             | 0.73              |
-| First-cell α, air under the body at 120 s | 0.56, 2.3 cm   | 0.66, 3.5 cm      |
+| First-cell α; air in the first cell, below the top liquid cell at 120 s [cm] | 0.56; 2.2, 2.3 | 0.66; 3.4, 3.5 |
 | Time steps, CPU time (120 s)            | 11,542, 2,511 s  | 5,043, 281 s      |
 
 The fronts differ by 3–4 % and the depth at the wall not at all, against a
@@ -536,15 +543,16 @@ front speed or shape is realistic.
   under [Reference runs](#reference-runs)). Steps 1–4 therefore stop at 20 s;
   Step 5 follows the spreading on a bottom-refined mesh and a longer domain.
 - **Air trapped under the spreading molasses (Step 5).** The first cell under
-  the body of the current holds 35–65 % air for the first minutes (see
+  the body of the current holds 35–66 % air at 5 s and 26–56 % at 120 s (see
   [Step 5](#step-5-spreading-stage)). Through the alpha-weighted viscosity it
-  lets the current slip at the bottom: at 120 s the flux of the body is up to
-  25 % above that of a viscous film. If it acted like a viscosity lower by
-  that factor, the front would move ~2–5 % further (x_N ∝ ν^(−1/5)); this is
-  an estimate, not a measurement. It is most likely numerical: Step 4 on
-  square cells shows no such layer while the current is several cells deep,
-  and its thickness depends on the cell size (3.5 cm with a 0.1 m first cell,
-  2.3 cm with 0.05 m). The cause has not been traced.
+  lets the current slip at the bottom: at 120 s the first-cell stress is
+  0.8–0.9 times, and the flux of the body up to 1.25 times, that of a viscous
+  film. If the extra flux acted like a viscosity lower by the same factor,
+  the front would move ~2–5 % further (x_N ∝ ν^(−1/5)); this is an estimate,
+  not a measurement. It is most likely numerical: Step 4 on square cells
+  shows no such layer while the current is several cells deep, and the air in
+  the first cell depends on the cell size (central at 120 s: 3.4 cm in a
+  0.1 m first cell, 2.2 cm in a 0.05 m one). The cause has not been traced.
 - The vertical open boundary (`right`, `p_rgh = 0`) acts as a free overfall;
   fine for the supercritical dam-break front, not for subcritical outflow.
 - Air-side convection/turbulence and radiation are not modelled; density is
