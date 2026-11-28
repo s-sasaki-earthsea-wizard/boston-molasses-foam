@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from post import metrics
+from post.frames import load_case
 from post.metrics import evaluate
 from tests.foamcase import column_alpha, write_case
 
@@ -176,3 +177,35 @@ def test_plot_reads_each_case_once(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(metrics, "load_case", lambda path: read.append(path) or load(path))
     assert metrics.main([*map(str, cases), "--plot", str(tmp_path / "fronts.svg")]) == 0
     assert read == cases
+
+
+@pytest.fixture
+def figures(monkeypatch: pytest.MonkeyPatch) -> list:
+    """Figures plot_fronts would save."""
+    from matplotlib.figure import Figure
+
+    saved: list = []
+    monkeypatch.setattr(Figure, "savefig", lambda fig, *args, **kwargs: saved.append(fig))
+    return saved
+
+
+def _line(ax, label: str):
+    return next(line for line in ax.get_lines() if line.get_label() == label)
+
+
+@pytest.mark.parametrize("order", [(0, 1), (1, 0)])
+def test_fronts_stop_at_their_own_outlet(tmp_path: Path, figures: list, order: tuple[int, int]) -> None:
+    """A short domain must not cut the front of a longer one, in either order."""
+    short = _front_case(tmp_path / "short", {"0": 10.0, "10": 30.0, "20": 40.0}, variant="low", step=4)
+    long = _front_case(tmp_path / "long", {"0": 10.0, "10": 60.0, "20": 100.0}, x_faces=np.linspace(0.0, 120.0, 241),
+                       variant="high", step=4)
+    cases = [(short, long)[i] for i in order]
+    results = [evaluate(c) for c in cases]
+    metrics.plot_fronts(results, [load_case(c) for c in cases], tmp_path / "fronts.svg")
+    (ax,) = figures[0].axes
+    label = {m.variant: metrics.case_label(m, False) for m in results}
+    assert max(_line(ax, label["high"]).get_ydata()) == 99.75
+    assert max(_line(ax, label["low"]).get_ydata()) == 39.75  # stops at its outlet
+    assert ax.get_ylim()[1] >= 120.0
+    outlets = sorted(line.get_ydata()[0] for line in ax.get_lines() if line.get_label().startswith("_"))
+    assert outlets == [40.0, 120.0]

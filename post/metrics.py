@@ -301,7 +301,10 @@ def table(results: list[CaseMetrics]) -> str:
 
 
 def plot_fronts(results: list[CaseMetrics], infos: list[CaseInfo], out: Path) -> None:
-    """Front position over time against Ritter's front, saved as SVG or PNG."""
+    """Front position over time against Ritter's front, saved as SVG or PNG.
+
+    Each front stops at the outlet of its own domain; every outlet is drawn.
+    """
     import matplotlib as mpl
 
     mpl.use("Agg")
@@ -327,7 +330,7 @@ def plot_fronts(results: list[CaseMetrics], infos: list[CaseInfo], out: Path) ->
     info = infos[0]
     t_end = max(m.times[1] for m in results)
     t_ref = np.linspace(0.0, t_end, 201)
-    x_end = info.grid.extent[1]
+    outlets = sorted({inf.grid.extent[1] for inf in infos})
     ax.plot(t_ref, info.x_dam + info.front_speed * t_ref, color=pp.REFERENCE, lw=1.0, ls=pp.DASH,
             label=f"Ritter front {info.x_dam:g} m + 2√(gH) t (frictionless)")
     for m, inf in zip(results, infos):
@@ -342,13 +345,14 @@ def plot_fronts(results: list[CaseMetrics], infos: list[CaseInfo], out: Path) ->
         x = np.array([inf.x_dam, *m.front_x[1:]])
         # Stop at the outlet: the last columns drain over the open boundary,
         # so the front definition no longer tracks a front there
-        hit = np.nonzero(x >= x_end - OUTLET_MARGIN)[0]
+        hit = np.nonzero(x >= inf.grid.extent[1] - OUTLET_MARGIN)[0]
         stop = hit[0] + 1 if hit.size else x.size
         ax.plot(t[:stop], x[:stop], label=case_label(m, with_mesh), **style)
-    ax.axhline(x_end, color=pp.AXIS, lw=0.8)
-    ax.text(t_end * 0.99, x_end - 3, f"outlet (x = {x_end:g} m)", ha="right", va="top",
-            color=pp.INK_SECONDARY, fontsize=8)
-    ax.set(xlim=(0, t_end), ylim=(0, x_end * 1.05), xlabel="time [s]",
+    for x_end in outlets:
+        ax.axhline(x_end, color=pp.AXIS, lw=0.8)
+        ax.text(t_end * 0.99, x_end - 3, f"outlet (x = {x_end:g} m)", ha="right", va="top",
+                color=pp.INK_SECONDARY, fontsize=8)
+    ax.set(xlim=(0, t_end), ylim=(0, outlets[-1] * 1.05), xlabel="time [s]",
            ylabel=f"front position, depth ≥ {FRONT_DEPTH:g} m [m]")
     ax.grid(True, color=pp.GRIDLINE, lw=0.6)
     ax.legend(loc="lower right", fontsize=7.5)
