@@ -422,13 +422,13 @@ above.*
 | Depth at the wall at 600 s, Huppert [m]             | 0.49, 0.57       | 0.64, 0.70       | 0.86, 0.91       |
 | Viscous-film check at 600 s: Re; q / q_lub; γ̇₁ / (3ū/h); τ₁ / (3μ₀ū/h) | 0.79; 1.05; 1.02; 0.94 | 0.42; 1.05; 1.13; 0.85 | 0.15; 1.24; 1.33; 0.81 |
 | First-cell α under the body at 120 / 600 s          | 0.74 / 0.96      | 0.56 / 0.89      | 0.44 / 0.63      |
-| Largest deviation of the liquid area [m²]           | 0.038            | 0.016            | 0.010            |
+| Largest deviation of the liquid area (unclipped alpha) [m²] | 0.038    | 0.016            | 0.0075           |
 | Max cooling of liquid cells (alpha > 0.99) [K]      | 0.015            | 0.013            | 0.015            |
 | Time steps, CPU time                                | 25,113, 7,158 s  | 21,772, 6,336 s  | 20,345, 5,845 s  |
 
-- alpha stays within [−6.1·10⁻⁶, 1 + 1.7·10⁻⁴]; no liquid reaches the
-  outlet in amounts the outflow check counts (alpha > 10⁻³), but traces of
-  ~10⁻⁴ leave the low run from ~60 s.
+- alpha stays within [−6.1·10⁻⁶, 1 + 1.7·10⁻⁴]. The outlet column never
+  holds alpha > 10⁻³ at a written time, so the volume check covers all of
+  them, but traces of ~10⁻⁴ leave the low run from ~60 s.
 - The first 120 s are identical to those of 120 s runs with the same inputs
   (fields compared at 30 and 120 s).
 - The viscous-film check takes the body of the current (h ≥ 0.25 m, at least
