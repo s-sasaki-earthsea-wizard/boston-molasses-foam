@@ -4,10 +4,10 @@
 surrounding atmosphere and whose viscosity depends on temperature. The setup
 is inspired by the Boston Molasses Disaster (15 January 1919).
 
-Everything runs in Docker; the host only needs `make`, `bash`, `awk` and
-Docker Compose v2. The post-processing (`metrics`, `readme-fronts`, the
-animations) and `make test` run on the host with
-[uv](https://docs.astral.sh/uv/); rendering the animations also needs
+Every OpenFOAM command runs in Docker; for the simulations the host only
+needs `make`, `bash`, `awk` and Docker Compose v2. The post-processing
+(`metrics`, `readme-fronts`, the animations) and `make test` run on the host
+with [uv](https://docs.astral.sh/uv/); rendering the animations also needs
 `ffmpeg`.
 
 ![Step 2: water dam break, liquid coloured by speed and temperature, depth against Ritter's solution](docs/media/dambreak-step2.gif)
