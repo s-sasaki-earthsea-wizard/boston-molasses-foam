@@ -66,7 +66,7 @@ class CaseMetrics:
     outflow through the boundary: liquid can leave below the threshold, or
     sit in the column before it crosses the boundary. ``volume_dev`` is the
     largest |V - V0| over the written times before it (all of them if the
-    outlet column stays dry).
+    outlet column stays dry; None if it is wetted from the first one).
     """
 
     case: str
@@ -85,7 +85,7 @@ class CaseMetrics:
     arrival: dict[str, float | None]
     outlet_wetting_time: float | None
     volume0: float
-    volume_dev: float
+    volume_dev: float | None
     volume_end: float
     cooling: float | None
     mu_change: float | None
@@ -215,7 +215,7 @@ def evaluate(path: Path) -> CaseMetrics:
         arrival=arrival,
         outlet_wetting_time=outlet_wetting_time,
         volume0=float(volume[0]),
-        volume_dev=float(np.abs(volume[before] - volume[0]).max()),
+        volume_dev=float(np.abs(volume[before] - volume[0]).max()) if before.any() else None,
         volume_end=float(volume[-1]),
         cooling=cooling,
         mu_change=mu_change,

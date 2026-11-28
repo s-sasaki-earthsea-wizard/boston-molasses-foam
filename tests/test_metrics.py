@@ -61,3 +61,12 @@ def test_outlet_wetting_time(tmp_path: Path) -> None:
     # 30 m² at 5 s against 20 m² at 0 s; the 40 m² at 10 and 15 s are left out
     assert m.volume_dev == pytest.approx(10.0)
     assert "| outlet column first holds alpha > 0.001 (written times) [s] | 10 |" in metrics.table([m])
+
+
+def test_outlet_wetted_from_the_first_time(tmp_path: Path) -> None:
+    """No written time precedes the wetting of the outlet column: no volume deviation."""
+    case = _front_case(tmp_path / "case", {"0": 41.0, "5": 41.0}, step=4)
+    m = evaluate(case)
+    assert m.outlet_wetting_time == 0.0
+    assert m.volume_dev is None
+    assert "| largest deviation of V from V₀ before that [m²] | – |" in metrics.table([m])
