@@ -116,7 +116,7 @@ services:
 │   ├── animate.py           # CLI: frames -> mp4 + GIF
 │   └── metrics.py           # CLI: front, volume, bounds of reference runs; front and depth plots
 ├── docs/media/              # README animation and figures
-├── tests/                   # pytest: stamps of the case scripts
+├── tests/                   # pytest: post/ on small synthetic cases, mesh and 0/ stamps of the case scripts
 ├── solver/interThermalFoam/
 │   ├── Make/{files,options}
 │   ├── interThermalFoam.C   # time loop
