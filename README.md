@@ -45,6 +45,7 @@ so a fresh checkout goes from `make run-step4` to results in one command
 | `readme-step5`  | Plot the Step 5 fronts and depth profiles to `docs/media/*-step5.svg` |
 | `clean`         | Remove time directories, solver logs, `postProcessing/`              |
 | `clean-all`     | `clean` + mesh, `0/`, `build/` and wmake objects                     |
+| `test`          | Tests of `post/` and `scripts/` (host: uv + pytest; no OpenFOAM)     |
 
 Container commands are wrapped as
 `docker compose -f docker/docker-compose.yml run --rm -T openfoam ...`,
@@ -92,7 +93,7 @@ services:
 
 ```text
 .
-├── Makefile                 # includes make/*.mk, help/clean targets
+├── Makefile                 # includes make/*.mk, help/clean/test targets
 ├── pyproject.toml, uv.lock # Python environment of post/ (uv)
 ├── make/
 │   ├── docker.mk            # compose wrapper, docker-build, docker-shell
@@ -115,6 +116,7 @@ services:
 │   ├── animate.py           # CLI: frames -> mp4 + GIF
 │   └── metrics.py           # CLI: front, volume, bounds of reference runs; front and depth plots
 ├── docs/media/              # README animation and figures
+├── tests/                   # pytest: stamps of the case scripts
 ├── solver/interThermalFoam/
 │   ├── Make/{files,options}
 │   ├── interThermalFoam.C   # time loop

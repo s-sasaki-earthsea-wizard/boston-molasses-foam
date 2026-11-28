@@ -22,7 +22,7 @@ include make/solver.mk
 include make/case.mk
 include make/post.mk
 
-.PHONY: help clean clean-all
+.PHONY: help clean clean-all test
 
 help: ## Show this help
 	@printf 'Usage: make <target>\n\nTargets:\n'
@@ -33,3 +33,6 @@ clean: ## Remove result time directories, solver logs and postProcessing
 
 clean-all: ## clean + mesh, initialised 0/, solver binary and wmake objects
 	bash scripts/clean.sh --all $(CASE_DIR)
+
+test: ## Run the tests of post/ and scripts/ (host: uv + pytest; no OpenFOAM)
+	uv run python -m pytest
