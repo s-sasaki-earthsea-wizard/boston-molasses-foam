@@ -169,8 +169,9 @@ esac
 # --- Domain, mesh and run time --------------------------------------------------
 # Steps 1-4: the wave stage on a 180 m domain with 0.5 m cells; the fronts
 #            reach the open end within 9.5-16.5 s, so 20 s.
-# Step 5:    the spreading stage, 600 s on a 400 m domain; the front then
-#            lies within 10 % of Huppert's viscous current. dx = 0.5 m;
+# Step 5:    the spreading stage, 600 s on a 400 m domain; the fronts are
+#            then 8-15 % ahead of Huppert's viscous current at the same
+#            depth (README, "Step 5: spreading stage"). dx = 0.5 m;
 #            dy = 0.05 m up to y = 2.5 m, which resolves a 0.4-1.2 m thick
 #            layer with 8-24 cells, then growing geometrically (r = 1.0488,
 #            48 cells) to 0.49 m at y = 12 m, the column top, and 0.5 m above.
