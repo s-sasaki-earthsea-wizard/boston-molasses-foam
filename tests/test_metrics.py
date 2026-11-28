@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from post import metrics
+from post.frames import load_case
 from post.metrics import evaluate
 from tests.foamcase import column_alpha, write_case
 
@@ -84,3 +86,45 @@ def test_film_check_without_liquid_cells(tmp_path: Path) -> None:
     assert film.bed_alpha == pytest.approx(0.4)
     assert math.isnan(film.surface_velocity)
     assert math.isnan(film.bed_air)
+
+
+def _front_case(path: Path, length: float, fronts: dict[str, float], step: int) -> Path:
+    """A 1 m deep current over x < front at each time, on a domain of ``length``."""
+    x_faces = np.linspace(0.0, length, int(length / 0.5) + 1)
+    x = 0.5 * (x_faces[:-1] + x_faces[1:])
+    fields = {}
+    for name, x_front in fronts.items():
+        alpha = column_alpha(Y_FACES, np.where(x < x_front, COLUMN if name == "0" else 1.0, 0.0))
+        fields[name] = (alpha, np.full_like(alpha, 0.1))
+    return write_case(path, x_faces, Y_FACES, fields, step=step)
+
+
+@pytest.fixture
+def figures(monkeypatch: pytest.MonkeyPatch) -> list:
+    """Figures the plot functions would save."""
+    saved: list = []
+    monkeypatch.setattr(metrics, "_save", lambda fig, results, out: saved.append(fig))
+    return saved
+
+
+def _lines(ax, label: str):
+    return next(line for line in ax.get_lines() if line.get_label() == label)
+
+
+@pytest.mark.parametrize("order", [(0, 1), (1, 0)])
+def test_fronts_stop_at_their_own_outlet(tmp_path: Path, figures: list, order: tuple[int, int]) -> None:
+    """A 180 m-style short domain must not cut the front of a longer domain."""
+    short = _front_case(tmp_path / "short", 40.0, {"0": 10.0, "10": 30.0, "20": 40.0}, step=4)
+    long = _front_case(tmp_path / "long", 120.0, {"0": 10.0, "10": 60.0, "20": 100.0}, step=5)
+    cases = [(short, long)[i] for i in order]
+    results = [evaluate(c) for c in cases]
+    metrics.plot_fronts(results, [load_case(c) for c in cases], tmp_path / "fronts.svg")
+    (ax,) = figures[0].axes
+    by_step = {m.step: metrics.case_label(m, False) for m in results}
+    long_line = _lines(ax, by_step[5])
+    assert max(long_line.get_xdata()) == 20.0
+    assert max(long_line.get_ydata()) == 99.75
+    assert max(_lines(ax, by_step[4]).get_ydata()) == 39.75  # stops at its outlet
+    assert ax.get_ylim()[1] >= 120.0
+    outlets = sorted(line.get_ydata()[0] for line in ax.get_lines() if line.get_label().startswith("_"))
+    assert outlets == [40.0, 120.0]

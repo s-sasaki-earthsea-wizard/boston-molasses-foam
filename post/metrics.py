@@ -595,6 +595,8 @@ def plot_fronts(
 ) -> None:
     """Front position over time against Ritter's front, saved as SVG or PNG.
 
+    Each front stops at the outlet of its own domain; every outlet is drawn.
+
     Args:
         results: Metrics of the cases.
         infos: Case information, in the same order.
@@ -611,7 +613,7 @@ def plot_fronts(
     info = infos[0]
     t_end = max(m.times[1] for m in results)
     t_ref = np.linspace(0.0, t_end, 201)
-    x_end = info.grid.extent[1]
+    outlets = sorted({inf.grid.extent[1] for inf in infos})
     ax.plot(t_ref, info.x_dam + info.front_speed * t_ref, color=pp.REFERENCE, lw=1.0, ls=pp.DASH,
             label=f"Ritter front {info.x_dam:g} m + 2√(gH) t (frictionless)")
     drawn: set[float] = set()
@@ -620,7 +622,7 @@ def plot_fronts(
         x = np.array([inf.x_dam, *m.front_x[1:]])
         # Stop at the outlet: the last columns drain over the open boundary,
         # so the front definition no longer tracks a front there
-        hit = np.nonzero(x >= x_end - OUTLET_MARGIN)[0]
+        hit = np.nonzero(x >= inf.grid.extent[1] - OUTLET_MARGIN)[0]
         stop = hit[0] + 1 if hit.size else x.size
         ax.plot(t[:stop], x[:stop], label=case_label(m, with_mesh), **style)
         if with_huppert and m.step is not None and m.step >= 4 and m.mu0 not in drawn:
@@ -628,10 +630,11 @@ def plot_fronts(
             t_h = t_ref[t_ref >= HUPPERT_FROM]
             ax.plot(t_h, inf.x_wall + huppert_front(t_h, m.volume0, inf.g, m.mu0 / m.rho, FRONT_DEPTH),
                     color=style["color"], lw=1.2, ls=_HUPPERT_LS)
-    ax.axhline(x_end, color=pp.AXIS, lw=0.8)
-    ax.text(t_end * 0.99, x_end - 3, f"outlet (x = {x_end:g} m)", ha="right", va="top",
-            color=pp.INK_SECONDARY, fontsize=8)
-    ax.set(xlim=(0, t_end), ylim=(0, x_end * 1.05), xlabel="time [s]",
+    for x_end in outlets:
+        ax.axhline(x_end, color=pp.AXIS, lw=0.8)
+        ax.text(t_end * 0.99, x_end - 3, f"outlet (x = {x_end:g} m)", ha="right", va="top",
+                color=pp.INK_SECONDARY, fontsize=8)
+    ax.set(xlim=(0, t_end), ylim=(0, outlets[-1] * 1.05), xlabel="time [s]",
            ylabel=f"front position, depth ≥ {FRONT_DEPTH:g} m [m]")
     ax.grid(True, color=pp.GRIDLINE, lw=0.6)
     handles, _ = ax.get_legend_handles_labels()
@@ -645,6 +648,8 @@ def plot_profiles(
     results: list[CaseMetrics], infos: list[CaseInfo], out: Path, with_huppert: bool = False
 ) -> None:
     """Depth profiles h(x) at the kept times, one panel per time.
+
+    The x axis spans the longest domain.
 
     Args:
         results: Metrics of the cases, with the same profile times.
@@ -660,7 +665,8 @@ def plot_profiles(
     with_mesh = len({m.mesh for m in results}) > 1
     styles = _styles(results)
     fig, axes = _figure("boston-molasses-profiles", (8.0, 1.0 + 1.6 * len(keys)), rows=len(keys))
-    x_end = infos[0].grid.extent[1]
+    x_wall = min(inf.x_wall for inf in infos)
+    x_end = max(inf.grid.extent[1] for inf in infos)
     h_max = max(max(m.profiles[k]) for m in results for k in keys if k in m.profiles)
     for ax, key in zip(axes, keys):
         t = float(key)
@@ -676,7 +682,7 @@ def plot_profiles(
                         color=style["color"], lw=1.2, ls=_HUPPERT_LS)
         ax.text(0.99, 0.92, f"t = {key} s", transform=ax.transAxes, ha="right", va="top",
                 color=pp.INK_SECONDARY, fontsize=8)
-        ax.set(xlim=(infos[0].x_wall, x_end), ylim=(0, 1.1 * h_max), ylabel="depth h [m]")
+        ax.set(xlim=(x_wall, x_end), ylim=(0, 1.1 * h_max), ylabel="depth h [m]")
         ax.grid(True, color=pp.GRIDLINE, lw=0.6)
     axes[-1].set_xlabel("x [m]")
     handles, _ = axes[0].get_legend_handles_labels()
