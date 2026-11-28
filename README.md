@@ -373,16 +373,19 @@ Per run: 20,000–25,000 time steps, 1.6–2.0 h CPU time and 2.9 GB of output
 The reference is Huppert's (1982) similarity solution for a 2D viscous
 current of fixed area A on a no-slip bottom, x_N = 1.411 (g A³ t / 3ν)^(1/5)
 (`post/analytic.py`). It holds once the current is long and thin and inertia
-is negligible; the wiki page
+is negligible. Its front is compared at the simulated front's depth
+threshold, 0.25 m, which its profile reaches 1–4 % behind x_N at 600 s. The
+wiki page
 [Spreading stage](https://github.com/s-sasaki-earthsea-wizard/boston-molasses-foam/wiki/Spreading-stage)
 derives it and discusses the runs in more detail.
 
 ![Front position against time over 600 s: after the wave stage the three molasses fronts creep, ahead of Huppert's viscous fronts and approaching them](docs/media/fronts-step5.svg)
 
 *Front position of the Step 5 runs against Ritter's frictionless front and
-Huppert's viscous current of the same area (dotted, from 5 s). The wave
-stage leaves the currents 1.4–1.6 times longer than Huppert's front at 30 s;
-they then creep and approach it from above.*
+Huppert's viscous current of the same area, its front also taken at a depth
+of 0.25 m (dotted, from 5 s). The wave stage leaves the currents 1.4–1.6
+times longer than Huppert's at 30 s; they then creep and approach it from
+above.*
 
 ![Depth profiles at 30, 120, 300 and 600 s: nearly flat layers at first, approaching Huppert's profiles by 600 s](docs/media/profiles-step5.svg)
 
@@ -392,9 +395,9 @@ they then creep and approach it from above.*
 |-----------------------------------------------------|------------------|------------------|------------------|
 | Front speed 3–8 s [m/s] (Step 4, 0.5 m mesh)        | 15.0 (15.4)      | 12.3 (12.9)      | 9.1 (8.7)        |
 | Front at t = 30 / 120 / 600 s [m]                   | 266 / 302 / 329  | 202 / 228 / 266  | 144 / 165 / 201  |
-| Huppert x_N at t = 30 / 120 / 600 s [m]             | 164 / 216 / 298  | 134 / 176 / 243  | 103 / 136 / 188  |
-| Front / x_N at t = 120 / 600 s                      | 1.40 / 1.10      | 1.29 / 1.09      | 1.21 / 1.07      |
-| Growth exponent d ln x / d ln t, 300–600 s (Huppert: 0.2) | 0.063      | 0.107            | 0.138            |
+| Huppert's front at h = 0.25 m, same times [m]       | 162 / 212 / 285  | 133 / 175 / 238  | 103 / 136 / 186  |
+| Front / Huppert's front at t = 120 / 600 s          | 1.42 / 1.15      | 1.31 / 1.12      | 1.21 / 1.08      |
+| Growth exponent d ln x / d ln t, 300–600 s; Huppert's front | 0.063; 0.178 | 0.107; 0.188  | 0.138; 0.195     |
 | Depth at the wall at 600 s, Huppert [m]             | 0.49, 0.57       | 0.64, 0.70       | 0.86, 0.91       |
 | Viscous-film check at 600 s: Re; q / q_lub; τ₁ / (3μū/h) | 0.79; 1.05; 1.02 | 0.42; 1.05; 1.13 | 0.15; 1.24; 1.33 |
 | First-cell α under the body at 120 / 600 s          | 0.74 / 0.96      | 0.56 / 0.89      | 0.44 / 0.63      |
@@ -414,12 +417,14 @@ they then creep and approach it from above.*
 
 **Approach to the viscous current.** Up to ~10 s the fronts follow Step 4.
 By 30 s the liquid is a nearly flat layer, 0.55–1.1 m deep and 1.4–1.6 times
-longer than x_N; from ~60 s on its body is a viscous film (Re < 2). The
-current then creeps and its profile approaches the similarity profile: by
-600 s the fronts are 7–10 % ahead of x_N and the depths at the wall 6–15 %
-below Huppert's. A time origin shifted by t₀, x_f(t) = x_N(t + t₀), fitted at 120 s
-(t₀ = 520, 315 and 190 s) predicted 338, 265 and 199 m at 600 s; the runs
-reach 329, 266 and 201 m.
+longer than Huppert's current; from ~60 s on its body is a viscous film
+(Re < 2). The current then creeps and its profile approaches the similarity
+profile: by 600 s the fronts are 8–15 % ahead of Huppert's front at the same
+depth, and the depths at the wall 6–15 % below Huppert's. The fronts still
+grow more slowly than his (t^0.06–0.14 against t^0.18–0.20 over 300–600 s)
+while the head start from the wave stage decays. Huppert's front with a time
+origin shifted by t₀, fitted at 120 s (t₀ = 715, 361 and 202 s), gives 325,
+259 and 197 m at 600 s; the runs reach 329, 266 and 201 m.
 
 **Air under the current.** During the wave stage the liquid overruns air at
 the bottom: under the body, the first cell (0.05 m) holds about half air from
