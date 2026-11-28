@@ -145,3 +145,14 @@ def test_front_speed_between_written_times(tmp_path: Path, times: tuple[str, ...
         assert np.isnan(m.front_speed)
     else:
         assert m.front_speed == pytest.approx(speed, rel=1e-3)
+
+
+def test_table_tells_meshes_apart_by_both_spacings(tmp_path: Path) -> None:
+    """Same Δx, other Δy: the meshes differ, and neither is labelled Δx = Δy."""
+    square = _front_case(tmp_path / "square", {"0": 10.0, "20": 30.0}, step=4)
+    flat = _front_case(tmp_path / "flat", {"0": 10.0, "20": 30.0}, y_faces=np.linspace(0.0, 4.0, 41), step=4)
+    text = metrics.table([evaluate(square), evaluate(flat)])
+    head, _, mesh_row = text.splitlines()[:3]
+    assert "Step 4 central (55 Pa s), Δ = 0.5 m |" in head
+    assert "Step 4 central (55 Pa s), Δx = 0.5 m, Δy = 0.1 m |" in head
+    assert mesh_row == "| mesh (cells) | Δ = 0.5 m (80 × 8) | Δx = 0.5 m, Δy = 0.1 m (80 × 40) |"

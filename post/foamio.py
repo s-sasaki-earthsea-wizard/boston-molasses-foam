@@ -169,6 +169,11 @@ class Grid2D:
             float(self.y[-1] + self.dy / 2),
         )
 
+    def spacing_label(self) -> str:
+        """Cell size for captions: "Δ = 0.5 m", or per axis if the cells are not square."""
+        dx, dy = f"{self.dx:.3g} m", f"{self.dy:.3g} m"
+        return f"Δ = {dx}" if dx == dy else f"Δx = {dx}, Δy = {dy}"
+
     def to_2d(self, values: np.ndarray) -> np.ndarray:
         """Reorder per-cell values into shape (ny, nx) or (ny, nx, ncomp)."""
         return values[self.order].reshape(self.ny, self.nx, *values.shape[1:])

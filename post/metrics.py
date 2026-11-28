@@ -76,6 +76,8 @@ class CaseMetrics:
     variant: str | None
     rho: float
     mu0: float
+    mesh: str
+    cells: tuple[int, int]
     dx: float
     dy: float
     times: tuple[float, float]
@@ -213,6 +215,8 @@ def evaluate(path: Path) -> CaseMetrics:
         variant=variant,
         rho=info.rho_liquid,
         mu0=info.mu0_liquid,
+        mesh=grid.spacing_label(),
+        cells=(grid.nx, grid.ny),
         dx=grid.dx,
         dy=grid.dy,
         times=(float(times[0]), float(times[-1])),
@@ -240,7 +244,7 @@ def case_label(m: CaseMetrics, with_mesh: bool) -> str:
         label = f"Step 4 {m.variant or ''} ({m.mu0:g} Pa s)".replace("  ", " ")
     else:
         label = f"Step {m.step} (water)"
-    return f"{label}, Δ = {m.dx:g} m" if with_mesh else label
+    return f"{label}, {m.mesh}" if with_mesh else label
 
 
 def _fmt(value: float | None, spec: str) -> str:
@@ -251,9 +255,9 @@ def _fmt(value: float | None, spec: str) -> str:
 
 def table(results: list[CaseMetrics]) -> str:
     """Markdown table, one column per case."""
-    with_mesh = len({m.dx for m in results}) > 1
+    with_mesh = len({m.mesh for m in results}) > 1
     rows: list[tuple[str, list[str]]] = [
-        ("Δx = Δy [m]", [_fmt(m.dx, "g") for m in results]),
+        ("mesh (cells)", [f"{m.mesh} ({m.cells[0]} × {m.cells[1]})" for m in results]),
         ("written times [s]", [f"{m.times[0]:g}–{m.times[1]:g}" for m in results]),
         ("Re = √(gH) H / ν₀", [_fmt(m.reynolds, ".2g") for m in results]),
         ("finished / time steps", [f"{'yes' if m.log and m.log.finished else 'no'} / "
@@ -303,7 +307,7 @@ def plot_fronts(results: list[CaseMetrics], infos: list[CaseInfo], out: Path) ->
         mpl.colors.to_hex(c) for c in mpl.colors.LinearSegmentedColormap.from_list(
             "ramp", ["#6aabf1", "#0e3d7e"])(np.linspace(0, 1, len(mu_levels)))
     ]
-    with_mesh = len({m.dx for m in results}) > 1
+    with_mesh = len({m.mesh for m in results}) > 1
     finest = min(m.dx for m in results)
 
     fig = Figure(figsize=(8.0, 4.4), facecolor=pp.SURFACE)
