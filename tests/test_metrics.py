@@ -218,3 +218,21 @@ def test_require_finished(tmp_path: Path, capsys: pytest.CaptureFixture) -> None
     capsys.readouterr()
     assert metrics.main([str(full), str(short), "--front-at", "30", "--require-finished"]) == 1
     assert "short: log.interThermalFoam.step5 does not end with End" in capsys.readouterr().err
+
+
+def test_huppert_values_only_for_viscous_cases(tmp_path: Path) -> None:
+    water = _front_case(tmp_path / "water", 120.0, {"0": 10.0, "300": 60.0, "600": 80.0}, step=1, depth=0.3)
+    m = evaluate(water, front_at=(300.0, 600.0))
+    assert math.isnan(m.huppert_at["600"])
+    assert math.isnan(m.huppert_exponent)
+    assert math.isnan(m.huppert_wall_depth_end)
+    assert "79.8, –" in metrics.table([m])  # front at 600 s; no Huppert front
+
+
+def test_huppert_exponent_ignores_the_outlet(tmp_path: Path) -> None:
+    """Huppert's front past the end of a short domain still has a growth exponent."""
+    case = _front_case(tmp_path / "short", 40.0, {"0": 10.0, "300": 39.0, "600": 39.5}, step=5, depth=0.3)
+    m = evaluate(case, front_at=(300.0, 600.0))
+    assert m.huppert_at["300"] > 40.0  # beyond the outlet
+    assert math.isnan(m.growth_exponent)  # the simulated front reaches the outlet
+    assert 0.0 < m.huppert_exponent < 0.2

@@ -171,7 +171,10 @@ class MixtureViscosity:
 
 @dataclass
 class CaseMetrics:
-    """Metrics of one case; NaN or None where not defined."""
+    """Metrics of one case; NaN or None where not defined.
+
+    Huppert's values (``huppert_*``) are NaN for the water steps (1-3).
+    """
 
     case: str
     step: int | None
@@ -400,8 +403,17 @@ def evaluate(
     x_end = grid.extent[1]
     wall_depth = frames[-1].depth()[0]
     t_last = float(times[-1])
+    # Huppert's current is the reference of the viscous liquids (Steps 4-5)
+    # only, as in the plots
+    viscous = info.step is not None and info.step >= 4
+    nan = float("nan")
     huppert_wall = (float(huppert(np.array([info.x_wall]), t_last, area0, info.g, nu0, info.x_wall).depth[0])
-                    if t_last > 0 else float("nan"))
+                    if viscous and t_last > 0 else nan)
+    huppert_at = {f"{t:g}": info.x_wall + float(huppert_front(t, area0, info.g, nu0, FRONT_DEPTH))
+                  if viscous else nan for t in front_at}
+    # The analytic front has no outlet
+    huppert_exponent = (growth_exponent(times, info.x_wall + huppert_front(times, area0, info.g, nu0, FRONT_DEPTH),
+                                        info.x_wall, float("inf")) if viscous else nan)
     profiles = {f"{t:g}": frames[i].depth().tolist()
                 for t in profile_times if (i := _index(times, t)) is not None}
     return CaseMetrics(
@@ -421,11 +433,9 @@ def evaluate(
         front_speed=speed,
         arrival=arrival,
         front_at={f"{t:g}": _at(times, front, t) for t in front_at},
-        huppert_at={f"{t:g}": info.x_wall + float(huppert_front(t, area0, info.g, nu0, FRONT_DEPTH))
-                    for t in front_at},
+        huppert_at=huppert_at,
         growth_exponent=growth_exponent(times, front, info.x_wall, x_end),
-        huppert_exponent=growth_exponent(
-            times, info.x_wall + huppert_front(times, area0, info.g, nu0, FRONT_DEPTH), info.x_wall, x_end),
+        huppert_exponent=huppert_exponent,
         wall_depth_end=float(wall_depth),
         huppert_wall_depth_end=huppert_wall,
         film={f"{t:g}": film_check(frames[i], info, viscosity)
