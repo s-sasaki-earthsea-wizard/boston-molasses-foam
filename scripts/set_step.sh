@@ -23,7 +23,7 @@
 #   3  Water + Andrade viscosity mu(T)    energy on,  mu(T) on
 #   4  Boston molasses, wave stage        energy on,  mu(T) on, molasses data
 #   5  Boston molasses, spreading         as 4 on a 400 m domain with a
-#                                         bottom-refined mesh, 120 s
+#                                         bottom-refined mesh, 600 s
 #   Steps 1-4: 180 m domain, 0.5 m cells, 20 s; Step 5: see blockMeshDict.
 #
 # Existing "key value;" entries are replaced in place (comments, layout and
@@ -169,7 +169,8 @@ esac
 # --- Domain, mesh and run time --------------------------------------------------
 # Steps 1-4: the wave stage on a 180 m domain with 0.5 m cells; the fronts
 #            reach the open end within 9.5-16.5 s, so 20 s.
-# Step 5:    the spreading stage, 120 s on a 400 m domain. dx = 0.5 m;
+# Step 5:    the spreading stage, 600 s on a 400 m domain; the front then
+#            lies within 10 % of Huppert's viscous current. dx = 0.5 m;
 #            dy = 0.05 m up to y = 2.5 m, which resolves a 0.4-1.2 m thick
 #            layer with 8-24 cells, then growing geometrically (r = 1.0488,
 #            48 cells) to 0.49 m at y = 12 m, the column top, and 0.5 m above.
@@ -182,7 +183,7 @@ case "${STEP}" in
     5)
         LENGTH_X=400; BASE_CELLS_X=800; BASE_CELLS_Y=114
         GRADING_Y="((2.5 50 1) (9.5 48 9.3798) (8 16 1))"
-        STEP_END_TIME=120; STEP_WRITE_INTERVAL=1
+        STEP_END_TIME=600; STEP_WRITE_INTERVAL=1
         ;;
 esac
 END_TIME="${END_TIME:-${STEP_END_TIME}}"

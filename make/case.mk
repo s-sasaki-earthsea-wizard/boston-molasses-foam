@@ -47,7 +47,7 @@ run-step1: ## Step 1: isothermal water dam-break
 run-step2: ## Step 2: water + heat exchange with the atmosphere
 run-step3: ## Step 3: water + temperature-dependent viscosity
 run-step4: ## Step 4: molasses wave stage (MOLASSES_MU=low|central|high, default central)
-run-step5: ## Step 5: molasses spreading, 400 m, bottom-refined mesh, 120 s (MOLASSES_MU)
+run-step5: ## Step 5: molasses spreading, 400 m, bottom-refined mesh, 600 s (MOLASSES_MU)
 
 # set_step.sh may change the domain and mesh, so the mesh and 0/ are brought
 # up to date after it (the $(INIT_FILE) rule depends on $(MESH_FILE))

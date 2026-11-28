@@ -25,7 +25,7 @@ stopAt          endTime;
 
 // endTime and writeInterval are switched by scripts/set_step.sh <1-5>
 // (Steps 1-4: 20 s / 0.5 s, the wave stage on the 180 m domain; Step 5:
-// 120 s / 1 s); END_TIME and WRITE_INTERVAL override them
+// 600 s / 1 s); END_TIME and WRITE_INTERVAL override them
 endTime         20;
 
 deltaT          1e-3;
