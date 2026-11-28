@@ -156,3 +156,14 @@ def test_table_tells_meshes_apart_by_both_spacings(tmp_path: Path) -> None:
     assert "Step 4 central (55 Pa s), Δ = 0.5 m |" in head
     assert "Step 4 central (55 Pa s), Δx = 0.5 m, Δy = 0.1 m |" in head
     assert mesh_row == "| mesh (cells) | Δ = 0.5 m (80 × 8) | Δx = 0.5 m, Δy = 0.1 m (80 × 40) |"
+
+
+@pytest.mark.parametrize(("alpha_max", "bounds"), [
+    ("1.000043", "[-3.9e-05, 1 + 4.3e-05]"),
+    ("0.99998", "[-3.9e-05, 1 - 2.0e-05]"),  # no overshoot
+])
+def test_alpha_bounds_with_sign(tmp_path: Path, alpha_max: str, bounds: str) -> None:
+    case = _front_case(tmp_path / "case", {"0": 10.0, "20": 30.0}, step=4)
+    log = case / "log.interThermalFoam.step4"
+    log.write_text(f"Time = 20\nMin(alpha.water) = -3.9e-05  Max(alpha.water) = {alpha_max}\nEnd\n")
+    assert f"| alpha bounds (log) | {bounds} |" in metrics.table([evaluate(case)])

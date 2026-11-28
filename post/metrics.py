@@ -247,6 +247,12 @@ def case_label(m: CaseMetrics, with_mesh: bool) -> str:
     return f"{label}, {m.mesh}" if with_mesh else label
 
 
+def _alpha_bounds(log: LogStats) -> str:
+    """Alpha bounds of a log, the upper one against 1: "[-3.9e-05, 1 + 4.3e-05]"."""
+    over = log.alpha_max - 1.0
+    return f"[{_fmt(log.alpha_min, '.1e')}, 1 {'-' if over < 0 else '+'} {abs(over):.1e}]"
+
+
 def _fmt(value: float | None, spec: str) -> str:
     if value is None or (isinstance(value, float) and np.isnan(value)):
         return "–"
@@ -264,8 +270,8 @@ def table(results: list[CaseMetrics]) -> str:
                                    f"{m.log.time_steps if m.log else '–'}" for m in results]),
         ("execution / clock time [s]", [f"{_fmt(m.log.execution_s, 'g')} / {_fmt(m.log.clock_s, 'g')}"
                                         if m.log else "–" for m in results]),
-        ("alpha bounds (log)", [f"[{_fmt(m.log.alpha_min, '.1e')}, 1 + {_fmt(m.log.alpha_max - 1, '.1e')}]"
-                                if m.log and m.log.alpha_max is not None else "–" for m in results]),
+        ("alpha bounds (log)", [_alpha_bounds(m.log) if m.log and m.log.alpha_max is not None else "–"
+                                for m in results]),
         ("T bounds (log) [K]", [f"[{_fmt(m.log.t_min, '.2f')}, {_fmt(m.log.t_max, '.2f')}]"
                                 if m.log and m.log.t_min is not None else "–" for m in results]),
         (f"front speed {SPEED_WINDOW[0]:g}–{SPEED_WINDOW[1]:g} s [m/s]",
