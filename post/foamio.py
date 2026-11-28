@@ -254,9 +254,10 @@ class Grid2D:
             NotImplementedError: If the spacing is not uniform and no faces
                 are given (a graded mesh needs the mesh points).
         """
-        tol = 1e-6 * float(np.ptp(centres[:, :2], axis=0).max())
         axes = []
         for name, c, faces in (("x", centres[:, 0], x_faces), ("y", centres[:, 1], y_faces)):
+            # Per axis: a long domain must not merge thin cells along the other
+            tol = _merge_tolerance(c)
             unique = _unique_sorted(c, tol)
             if unique.size < 2:
                 raise ValueError(f"the mesh has a single cell along {name}")
@@ -284,6 +285,11 @@ class Grid2D:
         if np.unique(linear).size != linear.size:
             raise ValueError("cell centres do not map one-to-one onto the grid")
         return cls(xs, ys, np.argsort(linear), xf, yf)
+
+
+def _merge_tolerance(values: np.ndarray) -> float:
+    """Coordinates closer than this along one axis are the same [m]."""
+    return 1e-6 * float(np.ptp(values))
 
 
 def _unique_sorted(values: np.ndarray, tol: float) -> np.ndarray:
@@ -340,7 +346,7 @@ def read_grid(case: Path) -> Grid2D:
         points = read_points(case)
     except FileNotFoundError:
         return Grid2D.from_cell_centres(centres)
-    tol = 1e-6 * float(np.ptp(points[:, :2], axis=0).max())
+    x, y = points[:, 0], points[:, 1]
     return Grid2D.from_cell_centres(
-        centres, _unique_sorted(points[:, 0], tol), _unique_sorted(points[:, 1], tol)
+        centres, _unique_sorted(x, _merge_tolerance(x)), _unique_sorted(y, _merge_tolerance(y))
     )
