@@ -306,6 +306,12 @@ make metrics METRICS_DIRS="case-step1 case-step2 case-step3 case-step4-low case-
 make readme-fronts    # docs/media/fronts-step4.svg from case-step1 and the three Step 4 runs
 ```
 
+`post/metrics.py` fails before writing anything when a case did not write a
+time asked for with `--front-at` or `--profile-times` (`--allow-missing`
+goes on and names the absent cases in the depth panels); `readme-fronts` and
+`readme-step5` also refuse a run whose solver log does not end with `End`
+(`--require-finished`).
+
 ![Front position against time over 20 s: water close to Ritter's frictionless front, the low, central and high molasses viscosities progressively slower](docs/media/fronts-step4.svg)
 
 *Front position of the reference runs (0.5 m mesh) against Ritter's
