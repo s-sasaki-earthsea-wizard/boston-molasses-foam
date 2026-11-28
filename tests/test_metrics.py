@@ -152,3 +152,18 @@ def test_depth_axis_covers_huppert_profiles(tmp_path: Path, figures: list) -> No
     wall_depth = huppert(np.array([0.0]), 30.0, m.volume0, 9.81, m.mu0 / m.rho).depth[0]
     assert wall_depth > max(m.profiles["30"])  # the case this test is about
     assert ax.get_ylim()[1] >= wall_depth
+
+
+def _legend_texts(fig) -> list[str]:
+    return [t.get_text() for ax in fig.axes if ax.get_legend() for t in ax.get_legend().get_texts()]
+
+
+@pytest.mark.parametrize(("step", "times", "expected"), [(1, (30.0,), False), (5, (0.0,), False),
+                                                         (5, (30.0,), True)])
+def test_huppert_legend_only_with_a_curve(tmp_path: Path, figures: list, step: int,
+                                          times: tuple[float, ...], expected: bool) -> None:
+    """Water, or only t = 0, draws no Huppert profile, so the legend has no entry for it."""
+    case = _front_case(tmp_path / "case", 120.0, {"0": 10.0, "30": 60.0}, step=step, depth=0.3)
+    m = evaluate(case, profile_times=times)
+    metrics.plot_profiles([m], [load_case(case)], tmp_path / "profiles.svg", with_huppert=True)
+    assert any("Huppert" in t for t in _legend_texts(figures[0])) == expected

@@ -670,6 +670,7 @@ def plot_profiles(
     x_wall = min(inf.x_wall for inf in infos)
     x_end = max(inf.grid.extent[1] for inf in infos)
     h_max = max(max(m.profiles[k]) for m in results for k in keys if k in m.profiles)
+    any_huppert = False
     for ax, key in zip(axes, keys):
         t = float(key)
         drawn: set[float] = set()
@@ -683,6 +684,7 @@ def plot_profiles(
                 depth = huppert(x, t, m.volume0, inf.g, m.mu0 / m.rho, inf.x_wall).depth
                 ax.plot(x, depth, color=style["color"], lw=1.2, ls=_HUPPERT_LS)
                 h_max = max(h_max, float(np.nanmax(depth)))
+                any_huppert = True
         ax.text(0.99, 0.92, f"t = {key} s", transform=ax.transAxes, ha="right", va="top",
                 color=pp.INK_SECONDARY, fontsize=8)
         ax.grid(True, color=pp.GRIDLINE, lw=0.6)
@@ -690,7 +692,7 @@ def plot_profiles(
         ax.set(xlim=(x_wall, x_end), ylim=(0, 1.1 * h_max), ylabel="depth h [m]")
     axes[-1].set_xlabel("x [m]")
     handles, _ = axes[0].get_legend_handles_labels()
-    if with_huppert:
+    if any_huppert:
         handles.append(_huppert_handle(1.2))
     # Above the first panel: inside, it covered the deep early profiles
     axes[0].legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, 1.02), fontsize=7.5,
