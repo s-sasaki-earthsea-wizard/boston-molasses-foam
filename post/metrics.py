@@ -739,10 +739,6 @@ def plot_profiles(
     _save(fig, results, out)
 
 
-def _floats(text: str) -> tuple[float, ...]:
-    return tuple(float(v) for v in text.replace(",", " ").split())
-
-
 def check_inputs(
     cases: list[Path], times: tuple[float, ...], require_finished: bool
 ) -> tuple[list[str], list[str]]:
