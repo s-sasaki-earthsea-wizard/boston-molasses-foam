@@ -89,3 +89,44 @@ def test_json_writes_null_for_undefined_values(tmp_path: Path) -> None:
     assert m["front_speed"] is None
     assert m["front_x"] == [9.75, None]
     assert m["outlet_wetting_time"] is None
+
+
+def _run(tmp_path: Path, name: str, times: tuple[str, ...], finished: bool) -> Path:
+    fronts = {t: 10.0 + float(t) for t in times}
+    return _front_case(tmp_path / name, fronts, step=4, finished=finished)
+
+
+@pytest.mark.parametrize(("kind", "message"), [
+    ("initialised", "initialised: no solver log (log.interThermalFoam.step*)"),
+    ("interrupted", "interrupted: log.interThermalFoam.step4 does not end with End"),
+    ("short", "short: last written time 10 s, endTime 20 s"),
+])
+def test_require_finished_fails_before_any_output(tmp_path: Path, capsys: pytest.CaptureFixture,
+                                                  kind: str, message: str) -> None:
+    """Reference figures need finished runs; anything else fails before output."""
+    finished = _run(tmp_path, "finished", ("0", "10", "20"), finished=True)
+    case = {
+        "initialised": _run(tmp_path, "initialised", ("0",), finished=False),
+        "interrupted": _run(tmp_path, "interrupted", ("0", "10"), finished=False),
+        "short": _run(tmp_path, "short", ("0", "10"), finished=True),  # End, but endTime is 20 s
+    }[kind]
+    if kind == "initialised":
+        next(case.glob("log.*")).unlink()  # make init writes no solver log
+    out, data = tmp_path / "fronts.svg", tmp_path / "metrics.json"
+    args = [str(finished), str(case), "--plot", str(out), "--json", str(data)]
+    assert metrics.main(args) == 0  # the generic metrics take partial runs
+    capsys.readouterr()
+    out.unlink()
+    data.unlink()
+    assert metrics.main([*args, "--require-finished"]) == 1
+    err = capsys.readouterr()
+    assert message in err.err
+    assert err.out == ""
+    assert not out.exists() and not data.exists()
+
+
+def test_require_finished_passes_finished_runs(tmp_path: Path) -> None:
+    case = _run(tmp_path, "finished", ("0", "10", "20"), finished=True)
+    out = tmp_path / "fronts.svg"
+    assert metrics.main([str(case), "--plot", str(out), "--require-finished"]) == 0
+    assert out.exists()

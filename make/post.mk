@@ -8,6 +8,7 @@
 #   readme-gif  anim + copy the GIF to docs/media for the README
 #   metrics     front, volume and bounds of METRICS_DIRS (python -m post.metrics)
 #   readme-fronts  plot the fronts of the README reference runs to docs/media
+#               (fails before any output unless every run finished)
 #
 # Example: make run-anim anim ANIM_STEP=4
 #          make anim ANIM_PANELS=flow,depth,froude ANIM_ARGS='--t-max 10'
@@ -54,5 +55,5 @@ metrics: ## Front, volume and bounds of METRICS_DIRS (default CASE_DIR; host: uv
 	$(foreach d,$(METRICS_DIRS),$(call need_centres,$(d)))
 	uv run python -m post.metrics $(METRICS_DIRS) $(METRICS_ARGS)
 
-readme-fronts: ## Plot the fronts of README_FRONT_DIRS to docs/media/fronts-step4.svg
-	$(MAKE) --no-print-directory metrics METRICS_DIRS="$(README_FRONT_DIRS)" METRICS_ARGS="--plot $(README_FRONTS)"
+readme-fronts: ## Plot the fronts of README_FRONT_DIRS to docs/media/fronts-step4.svg (finished runs only)
+	$(MAKE) --no-print-directory metrics METRICS_DIRS="$(README_FRONT_DIRS)" METRICS_ARGS="--require-finished --plot $(README_FRONTS)"

@@ -3,6 +3,7 @@
 Usage (from the project root; ``make metrics`` wraps this):
 
     uv run python -m post.metrics CASE_DIR [CASE_DIR ...] [--json FILE] [--plot FILE]
+                                  [--require-finished]
 
 Each case needs the cell centres in ``0/C`` (``postProcess -func
 writeCellCentres -time 0``) and its solver log ``log.interThermalFoam.stepN``.
@@ -27,7 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
-from post.foamio import read_entry, read_text
+from post.foamio import read_entry, read_text, time_dirs
 from post.frames import CaseInfo, Frame, load_case, load_frame
 
 FRONT_DEPTH = 0.25  # [m] front: last column with h >= FRONT_DEPTH
@@ -337,6 +338,27 @@ def plot_fronts(results: list[CaseMetrics], infos: list[CaseInfo], out: Path) ->
     fig.savefig(out, dpi=150, metadata=metadata)
 
 
+def check_finished(cases: list[Path]) -> list[str]:
+    """Problems of the runs that did not finish, one line each.
+
+    A run counts as finished when its newest solver log ends with "End" and
+    the case holds the output at the ``endTime`` of its ``system/controlDict``.
+    """
+    problems = []
+    for case in cases:
+        log = read_log(case)
+        if log is None:
+            problems.append(f"{case}: no solver log (log.interThermalFoam.step*)")
+            continue
+        if not log.finished:
+            problems.append(f"{case}: {Path(log.path).name} does not end with End")
+        end = float(read_entry(read_text(case / "system" / "controlDict"), "endTime"))
+        last = float(time_dirs(case)[-1])
+        if not np.isclose(last, end):
+            problems.append(f"{case}: last written time {last:g} s, endTime {end:g} s")
+    return problems
+
+
 def _json_safe(value):
     """``value`` with every non-finite float replaced by None (null in JSON)."""
     if isinstance(value, float):
@@ -353,11 +375,18 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("cases", type=Path, nargs="+", help="case directories with results")
     p.add_argument("--json", type=Path, help="also write the metrics (with the front series) as JSON; undefined values are null")
     p.add_argument("--plot", type=Path, help="plot the front positions to this file (.svg or .png)")
+    p.add_argument("--require-finished", action="store_true",
+                   help="fail before any output unless every run finished: its solver log ends with End "
+                        "and it wrote the endTime of its controlDict")
     return p.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.require_finished and (problems := check_finished(args.cases)):
+        for line in problems:
+            print(f"Error: {line}", file=sys.stderr)
+        return 1
     results = [evaluate(c) for c in args.cases]
     print(f"Front: last column with depth >= {FRONT_DEPTH:g} m\n")
     print(table(results))
