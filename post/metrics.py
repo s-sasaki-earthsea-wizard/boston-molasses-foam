@@ -675,7 +675,7 @@ def plot_fronts(
         out: Output file (.svg or .png).
         with_huppert: Also draw Huppert's viscous front of each viscous case,
             taken at the same depth threshold (``FRONT_DEPTH``),
-            from ``HUPPERT_FROM`` on.
+            from ``HUPPERT_FROM`` on (none for runs that end by then).
 
     Raises:
         ValueError: If the cases start from different columns (``check_columns``).
@@ -706,7 +706,7 @@ def plot_fronts(
         hit = np.nonzero(x >= inf.grid.extent[1] - OUTLET_MARGIN)[0]
         stop = hit[0] + 1 if hit.size else x.size
         ax.plot(t[:stop], x[:stop], label=case_label(m, with_mesh), **style)
-        if with_huppert and m.step is not None and m.step >= 4 and m.mu0 not in drawn:
+        if with_huppert and t_h.size and m.step is not None and m.step >= 4 and m.mu0 not in drawn:
             drawn.add(m.mu0)
             ax.plot(t_h, inf.x_wall + huppert_front(t_h, m.volume0, inf.g, m.mu0 / m.rho, FRONT_DEPTH),
                     color=style["color"], lw=1.2, ls=_HUPPERT_LS)
