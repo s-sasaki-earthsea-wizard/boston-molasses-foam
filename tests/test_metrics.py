@@ -250,3 +250,18 @@ def test_plotted_front_is_the_metrics_front(tmp_path: Path, figures: list) -> No
     line = _line(figures[0].axes[0], metrics.case_label(m, False))
     assert list(line.get_xdata()) == m.front_time
     assert list(line.get_ydata()) == m.front_x == [9.75, 19.75, 29.75]
+
+
+def test_outlet_label_above_the_outlet(tmp_path: Path, figures: list) -> None:
+    """The fronts stay below the outlet line, so its label goes above it, inside the axes."""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+    case = _front_case(tmp_path / "case", {"0": 10.0, "10": 39.5, "20": 40.0}, step=4)
+    metrics.plot_fronts([evaluate(case)], [load_case(case)], tmp_path / "fronts.svg")
+    fig = figures[0]
+    renderer = FigureCanvasAgg(fig).get_renderer()
+    (ax,) = fig.axes
+    (label,) = [t for t in ax.texts if t.get_text().startswith("outlet")]
+    box = label.get_window_extent(renderer)
+    assert box.y0 > ax.transData.transform((0.0, 40.0))[1]
+    assert box.y1 <= ax.get_window_extent(renderer).y1

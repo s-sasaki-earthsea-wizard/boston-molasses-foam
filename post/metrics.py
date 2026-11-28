@@ -395,8 +395,9 @@ def plot_fronts(results: list[CaseMetrics], infos: list[CaseInfo], out: Path) ->
         ax.plot(t[:stop], x[:stop], label=case_label(m, with_mesh), **style)
     for x_end in outlets:
         ax.axhline(x_end, color=pp.AXIS, lw=0.8)
-        ax.text(t_end * 0.99, x_end - 3, f"outlet (x = {x_end:g} m)", ha="right", va="top",
-                color=pp.INK_SECONDARY, fontsize=8)
+        # Above the line: no front of this domain gets there
+        ax.annotate(f"outlet (x = {x_end:g} m)", (t_end * 0.99, x_end), xytext=(0, 2),
+                    textcoords="offset points", ha="right", va="bottom", color=pp.INK_SECONDARY, fontsize=8)
     ax.set(xlim=(0, t_end), ylim=(0, outlets[-1] * 1.05), xlabel="time [s]",
            ylabel=f"front position, depth ≥ {FRONT_DEPTH:g} m [m]")
     ax.grid(True, color=pp.GRIDLINE, lw=0.6)
