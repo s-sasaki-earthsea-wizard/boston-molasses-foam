@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from post import metrics
 from post.metrics import evaluate
 from tests.foamcase import column_alpha, write_case
 
@@ -50,3 +51,13 @@ def test_volume_from_unclipped_alpha(tmp_path: Path) -> None:
     m = evaluate(case)
     assert m.volume_dev == pytest.approx((1e-3 - 5e-4) * 0.5 * 0.5)
     assert m.front_x == [9.75, 9.75]
+
+
+def test_outlet_wetting_time(tmp_path: Path) -> None:
+    """The first written time with liquid in the outlet column bounds the volume check."""
+    case = _front_case(tmp_path / "case", {"0": 10.0, "5": 30.0, "10": 40.0, "15": 40.0}, step=4)
+    m = evaluate(case)
+    assert m.outlet_wetting_time == 10.0
+    # 30 m² at 5 s against 20 m² at 0 s; the 40 m² at 10 and 15 s are left out
+    assert m.volume_dev == pytest.approx(10.0)
+    assert "| outlet column first holds alpha > 0.001 (written times) [s] | 10 |" in metrics.table([m])

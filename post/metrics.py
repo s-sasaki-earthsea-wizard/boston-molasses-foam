@@ -32,7 +32,7 @@ from post.frames import CaseInfo, Frame, load_case, load_frame
 FRONT_DEPTH = 0.25  # [m] front: last column with h >= FRONT_DEPTH
 SPEED_WINDOW = (3.0, 8.0)  # [s] front speed (x(t1) - x(t0)) / (t1 - t0)
 ARRIVAL_X = (50.0, 100.0, 150.0)  # [m] arrival times of the front
-OUTLET_ALPHA = 1e-3  # outflow starts when the last column holds more liquid
+OUTLET_ALPHA = 1e-3  # the outlet (last) column counts as wetted once it holds more liquid
 CORE_ALPHA = 0.99  # cells counted as liquid for the cooling
 OUTLET_MARGIN = 1.0  # [m] plotted fronts end this close to the outlet
 READ_THREADS = 16  # concurrent reads (network shares are latency-bound)
@@ -59,7 +59,15 @@ class LogStats:
 
 @dataclass
 class CaseMetrics:
-    """Metrics of one case; NaN or None where not defined."""
+    """Metrics of one case; NaN or None where not defined.
+
+    ``outlet_wetting_time`` is the first written time at which the outlet
+    (last) column holds alpha > ``OUTLET_ALPHA``. It is not the start of the
+    outflow through the boundary: liquid can leave below the threshold, or
+    sit in the column before it crosses the boundary. ``volume_dev`` is the
+    largest |V - V0| over the written times before it (all of them if the
+    outlet column stays dry).
+    """
 
     case: str
     step: int | None
@@ -75,7 +83,7 @@ class CaseMetrics:
     front_x: list[float] = field(repr=False)
     front_speed: float
     arrival: dict[str, float | None]
-    outflow_start: float | None
+    outlet_wetting_time: float | None
     volume0: float
     volume_dev: float
     volume_end: float
@@ -154,8 +162,9 @@ def evaluate(path: Path) -> CaseMetrics:
     # Unclipped alpha: the volume the solver holds, bounding errors included
     volume = np.array([f.alpha_raw.sum() * area for f in frames])
     outlet = np.array([f.alpha[:, -1].max() > OUTLET_ALPHA for f in frames])
-    outflow_start = float(times[outlet][0]) if outlet.any() else None
-    before = times < outflow_start if outflow_start is not None else np.ones_like(times, dtype=bool)
+    outlet_wetting_time = float(times[outlet][0]) if outlet.any() else None
+    before = (times < outlet_wetting_time if outlet_wetting_time is not None
+              else np.ones_like(times, dtype=bool))
 
     arrival = {}
     for x_a in ARRIVAL_X:
@@ -204,7 +213,7 @@ def evaluate(path: Path) -> CaseMetrics:
         front_x=front.tolist(),
         front_speed=speed,
         arrival=arrival,
-        outflow_start=outflow_start,
+        outlet_wetting_time=outlet_wetting_time,
         volume0=float(volume[0]),
         volume_dev=float(np.abs(volume[before] - volume[0]).max()),
         volume_end=float(volume[-1]),
@@ -252,8 +261,9 @@ def table(results: list[CaseMetrics]) -> str:
     for key in results[0].arrival:
         rows.append((f"front at x = {key} m [s]", [_fmt(m.arrival[key], "g") for m in results]))
     rows += [
-        ("outflow starts [s]", [_fmt(m.outflow_start, "g") for m in results]),
-        ("largest deviation of V from V₀ before outflow [m²]", [_fmt(m.volume_dev, ".1e") for m in results]),
+        (f"outlet column first holds alpha > {OUTLET_ALPHA:g} (written times) [s]",
+         [_fmt(m.outlet_wetting_time, "g") for m in results]),
+        ("largest deviation of V from V₀ before that [m²]", [_fmt(m.volume_dev, ".1e") for m in results]),
         ("V₀, V(end) [m²]", [f"{m.volume0:.3f}, {m.volume_end:.1f}" for m in results]),
         ("max cooling, alpha > 0.99 [K]", [_fmt(m.cooling, ".1e") for m in results]),
         ("μ change for that cooling [%]",
