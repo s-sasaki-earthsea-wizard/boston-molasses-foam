@@ -417,8 +417,9 @@ above.*
 
 **Approach to the viscous current.** Up to ~10 s the fronts follow Step 4.
 By 30 s the liquid is a nearly flat layer, 0.55–1.1 m deep and 1.4–1.6 times
-longer than Huppert's current; from ~60 s on its body is a viscous film
-(Re < 2). The current then creeps and its profile approaches the similarity
+longer than Huppert's current; from ~60 s on its body flows at Re < 2, and
+from 120 s on its flux is within 25 % of a viscous film's. The current then
+creeps and its profile approaches the similarity
 profile: by 600 s the fronts are 8–15 % ahead of Huppert's front at the same
 depth, and the depths at the wall 6–15 % below Huppert's. The fronts still
 grow more slowly than his (t^0.06–0.14 against t^0.18–0.20 over 300–600 s)
@@ -427,7 +428,7 @@ origin shifted by t₀, fitted at 120 s (t₀ = 715, 361 and 202 s), gives 325,
 259 and 197 m at 600 s; the runs reach 329, 266 and 201 m.
 
 **Air under the current.** During the wave stage the liquid overruns air at
-the bottom: under the body, the first cell (0.05 m) holds about half air from
+the bottom: under the body, the first cell (0.05 m) holds 35–65 % air from
 ~5 s on (median alpha 0.34–0.65 at 5 s, 0.44–0.74 at 120 s, i.e. 1.6–3.2 cm
 of air). The viscosity is alpha-weighted, so this layer acts as a slip layer:
 at 120 s the first-cell shear is 1.3–1.8 times, and the flux up to 1.25
@@ -533,7 +534,7 @@ front speed or shape is realistic.
   under [Reference runs](#reference-runs)). Steps 1–4 therefore stop at 20 s;
   Step 5 follows the spreading on a bottom-refined mesh and a longer domain.
 - **Air trapped under the spreading molasses (Step 5).** The first cell under
-  the body of the current holds about half air for the first minutes (see
+  the body of the current holds 35–65 % air for the first minutes (see
   [Step 5](#step-5-spreading-stage)). Through the alpha-weighted viscosity it
   lets the current slip at the bottom: at 120 s the flux of the body is up to
   25 % above that of a viscous film. If it acted like a viscosity lower by
