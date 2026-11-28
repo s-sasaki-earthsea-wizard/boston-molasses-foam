@@ -22,10 +22,10 @@ make run-step1        # builds the solver, mesh and initial fields if needed, th
 make help             # list all targets
 ```
 
-`run-stepN` depends on the solver binary and the mesh as file targets, and
-rebuilds the initialised `0/` after `set_step.sh` when needed, so a fresh
-checkout goes from `make run-step4` to results in one command (after the
-image is built).
+`run-stepN` depends on the solver binary as a file target, and rebuilds the
+mesh and the initialised `0/` after `set_step.sh` when the step changed them,
+so a fresh checkout goes from `make run-step4` to results in one command
+(after the image is built).
 
 ## Make targets
 
@@ -34,14 +34,15 @@ image is built).
 | `docker-build`  | Build the image                                                      |
 | `docker-shell`  | Interactive bash in the container (project mounted at `/work`)       |
 | `build-solver`  | `wmake solver/interThermalFoam` → `build/bin/interThermalFoam`       |
-| `mesh`          | `blockMesh` (360 × 40 × 1 cells)                                     |
+| `mesh`          | `blockMesh` (mesh of the last set step, e.g. 360 × 40 × 1 cells)     |
 | `init`          | Copy `0.orig` → `0`, then `setFields`                                |
-| `run-step1..4`  | `set_step.sh N`, re-`init` if `liquidT` changed, clean, run solver   |
-| `run-anim`      | Copy the inputs to `ANIM_DIR`, set a dense output, run `ANIM_STEP`   |
+| `run-step1..5`  | `set_step.sh N`, re-`mesh`/`init` if the step changed them, clean, run solver |
+| `run-anim`      | Copy the inputs to `ANIM_DIR`, run `ANIM_STEP` there with a dense output |
 | `anim`          | Render frames, mp4 and GIF of `ANIM_DIR` (host: uv + ffmpeg)         |
 | `readme-gif`    | `anim` + copy the GIF to `docs/media/dambreak-stepN.gif`             |
 | `metrics`       | Front, volume, bounds of `METRICS_DIRS` (host: uv)                   |
 | `readme-fronts` | Plot the fronts of the reference runs to `docs/media/fronts-step4.svg` |
+| `readme-step5`  | Plot the Step 5 fronts and depth profiles to `docs/media/*-step5.svg` |
 | `clean`         | Remove time directories, solver logs, `postProcessing/`              |
 | `clean-all`     | `clean` + mesh, `0/`, `build/` and wmake objects                     |
 
@@ -57,6 +58,11 @@ as a second `-f` (see [Results on another disk](#results-on-another-disk)).
 cp -r case case-step4          # (without results)
 make run-step4 CASE_DIR=case-step4
 ```
+
+`run-stepN` also takes `MOLASSES_MU` (`low`, `central` or `high`; Steps 4–5),
+`MESH_REFINE` (multiplies the cell numbers of the step's mesh, e.g. `2` or
+`0.5`; the grading keeps its shape) and `END_TIME` / `WRITE_INTERVAL`
+(override the step's `endTime` / `writeInterval` in `system/controlDict`).
 
 ### Results on another disk
 
@@ -91,23 +97,23 @@ services:
 ├── make/
 │   ├── docker.mk            # compose wrapper, docker-build, docker-shell
 │   ├── solver.mk            # build-solver
-│   ├── case.mk              # mesh, init, run-step1..4
-│   └── post.mk              # run-anim, anim, readme-gif, metrics, readme-fronts
+│   ├── case.mk              # mesh, init, run-step1..5
+│   └── post.mk              # run-anim, anim, readme-gif, metrics, readme-fronts, readme-step5
 ├── docker/
 │   ├── Dockerfile           # opencfd/openfoam-dev:2312 + project overrides
 │   ├── docker-compose.yml   # mounts the project root at /work
 │   └── entrypoint.sh        # replaces /openfoam/run (see notes)
 ├── scripts/
-│   ├── set_step.sh          # switch a case to step 1..4 (transportProperties, liquidT)
-│   ├── prepare_anim_case.sh # animation case: copy inputs, set endTime/writeInterval
+│   ├── set_step.sh          # switch a case to step 1..5 (properties, liquidT, mesh, run length)
+│   ├── prepare_anim_case.sh # animation case: copy the inputs
 │   └── clean.sh
 ├── post/                    # frames and animations (runs on the host)
-│   ├── foamio.py            # ASCII field reader, grid from cell centres
+│   ├── foamio.py            # ASCII field reader, uniform or graded grid from cell centres and points
 │   ├── frames.py            # case metadata, fields of one time step
-│   ├── analytic.py          # Ritter solution with the wall reflection
+│   ├── analytic.py          # Ritter solution with the wall reflection, Huppert's viscous current
 │   ├── plot.py              # panels (flow, temperature, depth, froude), layout
 │   ├── animate.py           # CLI: frames -> mp4 + GIF
-│   └── metrics.py           # CLI: front, volume, bounds of reference runs; front plot
+│   └── metrics.py           # CLI: front, volume, bounds of reference runs; front and depth plots
 ├── docs/media/              # README animation and figures
 ├── solver/interThermalFoam/
 │   ├── Make/{files,options}
@@ -156,10 +162,17 @@ Per PIMPLE iteration: alpha (MULES) → T → mu(T) → U → p_rgh.
 
 ### Domain and boundary conditions
 
-x = 0–180 m, y = 0–20 m, z = 0–1 m (1 cell, `empty`), Δx = Δy = 0.5 m.
+y = 0–20 m, z = 0–1 m (1 cell, `empty`); `set_step.sh` sets the length and
+the mesh in `system/blockMeshDict`:
+
+- Steps 1–4: x = 0–180 m, Δx = Δy = 0.5 m (360 × 40 = 14,400 cells).
+- Step 5: x = 0–400 m, Δx = 0.5 m; Δy = 0.05 m up to y = 2.5 m, growing by
+  ~4.9 % per cell to 0.49 m at y = 12 m, 0.5 m above (800 × 114 = 91,200
+  cells). The column top lies on a cell face.
+
 Liquid block x, y ∈ [0, 12] m at `liquidT` = 293.15 K (Steps 1–3) or
-283.15 K (Step 4), set per step by `set_step.sh` in `system/setFieldsDict`;
-air at 277.15 K.
+283.15 K (Steps 4–5), set per step by `set_step.sh` in
+`system/setFieldsDict`; air at 277.15 K.
 
 | Patch          | U                             | p_rgh                    | alpha.water                | T                                |
 |----------------|-------------------------------|--------------------------|----------------------------|----------------------------------|
@@ -175,7 +188,11 @@ air at 277.15 K.
 | 2    | water    | on     | off   | 293.15             | 998.2       | 1.002e-3   | –      | 4182        | 0.598         |
 | 3    | water    | on     | on    | 293.15             | 998.2       | 1.002e-3   | 2274   | 4182        | 0.598         |
 | 4    | molasses | on     | on    | 283.15             | 1430        | 20/55/200  | 8.5e3  | 2050        | 0.31          |
+| 5    | molasses | on     | on    | 283.15             | 1430        | 20/55/200  | 8.5e3  | 2050        | 0.31          |
 
+Steps 1–4 run 20 s, the wave stage, on the 180 m domain. Step 5 runs the
+Step 4 molasses for 600 s on the 400 m bottom-refined domain, the spreading
+stage (see [Domain](#domain-and-boundary-conditions)).
 T0 is the reference temperature of mu0 in mu(T); each step starts the liquid
 at T0. `B = 2274 K` reproduces μ_water(4 °C)/μ_water(20 °C) =
 1.5673/1.0016 mPa·s.
@@ -190,7 +207,7 @@ derivations, the ranges and what was not verified; the sources are listed
   Rubinstein 2016), and mu0 is its viscosity at that temperature.
 - mu0 comes from the Broadfoot & Steindl (1980) correlation at a shear rate
   of 10 s⁻¹. It is uncertain by about a factor of 3 either way, mainly
-  through the unknown solids content, so Step 4 has three viscosity
+  through the unknown solids content, so Steps 4–5 have three viscosity
   variants, selected with `MOLASSES_MU`: `low` (20 Pa s, 76 % dry
   substance), `central` (55 Pa s, 78 %, the default) and `high` (200 Pa s,
   80 %). All other properties, B included, are the same in the three.
@@ -207,13 +224,16 @@ make run-step4 CASE_DIR=case-step4-central                    # MOLASSES_MU=cent
 make run-step4 CASE_DIR=case-step4-high    MOLASSES_MU=high
 ```
 
+Step 5 the same way, with `make run-step5`.
+
 `set_step.sh` records the variant as `viscosityVariant` in
 `constant/transportProperties` (`none` in Steps 1–3, which accept only
 `central`).
 
-`set_step.sh` edits entries of `constant/transportProperties`
-and `system/setFieldsDict` in place, keeps comments, fails without touching
-either file if any entry is missing, and writes a file only when it changes.
+`set_step.sh` edits entries of `constant/transportProperties`,
+`system/setFieldsDict`, `system/blockMeshDict` and `system/controlDict` in
+place, keeps comments, fails without touching any file if an entry is
+missing, and writes a file only when it changes.
 
 ### Molasses property sources
 
@@ -268,8 +288,8 @@ either file if any entry is missing, and writes a file only when it changes.
 ## Reference runs
 
 OpenFOAM v2312 container on a 16-core Linux host, each run serial (all runs
-side by side), results on a CIFS share. Each step simulates the first 20 s
-(`endTime` in `system/controlDict`), the wave stage on the 180 m domain: the
+side by side), results on a CIFS share. Steps 1–4 simulate the first 20 s
+(`endTime`, set by `set_step.sh`), the wave stage on the 180 m domain: the
 fronts of water and of the low and central molasses reach the open end at
 x = 180 m after 9.5, 12.5 and 16.5 s, and the layer that follows is only one
 or two cells thick (see [Known limitations](#known-limitations)). Per run on
@@ -319,8 +339,8 @@ numerical, and the 0.25 m depth threshold leaves it out. It also reaches the
 outlet early: the high-viscosity run loses 0.08 m² by 20 s while its front
 is at 133 m.
 
-**Mesh study.** Step 4 central on a 0.25 m mesh (720 × 80 cells: set
-`(720 80 1)` in `system/blockMeshDict` of a copied case):
+**Mesh study.** Step 4 central on a 0.25 m mesh (720 × 80 cells,
+`make run-step4 CASE_DIR=case-step4-central-dx025 MESH_REFINE=2`):
 
 |                                    | 0.5 m (reference) | 0.25 m  |
 |------------------------------------|-------------------|---------|
@@ -348,10 +368,10 @@ make anim ANIM_PANELS=flow,depth,froude ANIM_ARGS='--t-max 10' # other panels
 ```
 
 `run-anim` copies the inputs of `CASE_DIR` into `ANIM_DIR`
-(default `case-anim-step$(ANIM_STEP)`), sets `endTime` / `writeInterval`
-(`ANIM_END`, `ANIM_WRITE`) and runs `run-stepN` there, so the reference runs
-keep their 20 s / 0.5 s output. `anim` writes the cell centres (`0/C`, used to
-recover the grid; uniform grids only for now) and calls
+(default `case-anim-step$(ANIM_STEP)`) and runs `run-stepN` there with
+`END_TIME` / `WRITE_INTERVAL` set to `ANIM_END` / `ANIM_WRITE`, so the
+reference runs keep their own output. `anim` writes the cell centres (`0/C`,
+used with the mesh points to recover the grid, uniform or graded) and calls
 `uv run python -m post.animate` (see `--help` for speed, resolution, GIF frame
 rate, time range, title). Frames are rendered once at 1920 px; the mp4
 (H.264, for slides) plays them in real time at 25 fps, the GIF is the same
@@ -411,11 +431,11 @@ front speed or shape is realistic.
   depends on the mesh (6.3 kPa for the central molasses on a 0.25 m mesh),
   because the laminar boundary layer √(ν t) (~12, 20 and 37 cm after 1 s) is
   not resolved by the 0.5 m cells.
-- **Thin-layer stage not resolved.** From ~10 s on, the molasses layer is
-  one or two cells thick, which is where the viscosity matters most and where
-  the 0.5 m mesh is not converged (see the mesh study under
-  [Reference runs](#reference-runs)). The runs therefore stop at 20 s; the
-  spreading stage needs a bottom-refined mesh and a longer domain.
+- **Thin-layer stage not resolved in Steps 1–4.** From ~10 s on, the
+  molasses layer is one or two cells thick, which is where the viscosity
+  matters most and where the 0.5 m mesh is not converged (see the mesh study
+  under [Reference runs](#reference-runs)). Steps 1–4 therefore stop at 20 s;
+  Step 5 follows the spreading on a bottom-refined mesh and a longer domain.
 - The vertical open boundary (`right`, `p_rgh = 0`) acts as a free overfall;
   fine for the supercritical dam-break front, not for subcritical outflow.
 - Air-side convection/turbulence and radiation are not modelled; density is
