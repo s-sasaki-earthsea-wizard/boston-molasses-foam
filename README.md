@@ -4,9 +4,11 @@
 surrounding atmosphere and whose viscosity depends on temperature. The setup
 is inspired by the Boston Molasses Disaster (15 January 1919).
 
-Everything runs in Docker; the host only needs `make`, `bash`, `awk` and
-Docker Compose v2. Rendering the animations additionally needs
-[uv](https://docs.astral.sh/uv/) and `ffmpeg` on the host.
+Every OpenFOAM command runs in Docker; for the simulations the host only
+needs `make`, `bash`, `awk` and Docker Compose v2. The post-processing
+(`metrics`, `readme-fronts`, the animations) and `make test` run on the host
+with [uv](https://docs.astral.sh/uv/); rendering the animations also needs
+`ffmpeg`.
 
 ![Step 2: water dam break, liquid coloured by speed and temperature, depth against Ritter's solution](docs/media/dambreak-step2.gif)
 
@@ -40,8 +42,11 @@ image is built).
 | `run-anim`      | Copy the inputs to `ANIM_DIR`, set a dense output, run `ANIM_STEP`   |
 | `anim`          | Render frames, mp4 and GIF of `ANIM_DIR` (host: uv + ffmpeg)         |
 | `readme-gif`    | `anim` + copy the GIF to `docs/media/dambreak-stepN.gif`             |
+| `metrics`       | Front, volume, bounds of `METRICS_DIRS` (host: uv)                   |
+| `readme-fronts` | Plot the fronts of the finished reference runs to `docs/media/fronts-step4.svg` |
 | `clean`         | Remove time directories, solver logs, `postProcessing/`              |
 | `clean-all`     | `clean` + mesh, `0/`, `build/` and wmake objects                     |
+| `test`          | Tests of `post/` (host: uv + pytest; no OpenFOAM)                    |
 
 Container commands are wrapped as
 `docker compose -f docker/docker-compose.yml run --rm -T openfoam ...`,
@@ -90,7 +95,7 @@ services:
 │   ├── docker.mk            # compose wrapper, docker-build, docker-shell
 │   ├── solver.mk            # build-solver
 │   ├── case.mk              # mesh, init, run-step1..4
-│   └── post.mk              # run-anim, anim, readme-gif
+│   └── post.mk              # run-anim, anim, readme-gif, metrics, readme-fronts
 ├── docker/
 │   ├── Dockerfile           # opencfd/openfoam-dev:2312 + project overrides
 │   ├── docker-compose.yml   # mounts the project root at /work
@@ -104,8 +109,10 @@ services:
 │   ├── frames.py            # case metadata, fields of one time step
 │   ├── analytic.py          # Ritter solution with the wall reflection
 │   ├── plot.py              # panels (flow, temperature, depth, froude), layout
-│   └── animate.py           # CLI: frames -> mp4 + GIF
-├── docs/media/              # README animation
+│   ├── animate.py           # CLI: frames -> mp4 + GIF
+│   └── metrics.py           # CLI: front, volume, bounds of reference runs; front plot
+├── docs/media/              # README animation and figures
+├── tests/                   # pytest: post/ on small synthetic cases
 ├── solver/interThermalFoam/
 │   ├── Make/{files,options}
 │   ├── interThermalFoam.C   # time loop
@@ -264,23 +271,88 @@ either file if any entry is missing, and writes a file only when it changes.
 
 ## Reference runs
 
-OpenFOAM v2312 container on a 16-core Linux host, each run serial (Steps 1–4
-run side by side), results on a CIFS share. Each step: 60 s simulated,
-~2,700 time steps, ~120 s wall time, ~30 MB RAM, ~100 MB output (120
+OpenFOAM v2312 container on a 16-core Linux host, each run serial (all runs
+side by side), results on a CIFS share. Each step simulates the first 20 s
+(`endTime` in `system/controlDict`), the wave stage on the 180 m domain: the
+fronts of water and of the low and central molasses come within 1 m of the
+open end at x = 180 m after 9.5, 12.5 and 16.5 s (the central one never
+reaches the last cell centre, 179.75 m), and the layer that follows is only
+one or two cells thick (see [Known limitations](#known-limitations)). Per run on
+the 0.5 m mesh: 1,300–1,700 time steps, 50–65 s CPU time, ~35 MB output (40
 compressed time directories).
 
-The Step 4 entries were obtained with the former placeholder molasses
-properties (rho = 1400 kg/m³, mu0 = 5 Pa s at 20 °C, B = 1.0e4 K, liquid at
-20 °C) and have not been re-run with the literature values yet.
+The front is the last column whose liquid depth h = Σ α Δy is at least
+0.25 m (half a cell). The table and the figure come from `post/metrics.py`:
 
-| Check                                   | Result                                      |
-|-----------------------------------------|---------------------------------------------|
-| Front speed 3–8 s, water (Step 1)       | ~20.5 m/s (Ritter 2√(gH) = 21.7 m/s)         |
-| Front speed 3–8 s, molasses (Step 4)    | ~20 m/s (Re ≈ 7·10⁴: inertia-dominated)      |
-| Liquid volume before outflow (~9 s)     | 144.000 m² (= 12 × 12) in all steps          |
-| alpha bounds                            | [−4.9e-5, 1 + 2.9e-5]                        |
-| T bounds, Steps 2–4                     | [277.15, 293.150] K                          |
-| Step 1 vs Step 2 velocity at t = 5 s    | bit-identical (energy is one-way coupled when mu is constant) |
+```bash
+make metrics METRICS_DIRS="case-step1 case-step2 case-step3 case-step4-low case-step4-central case-step4-high"
+make readme-fronts    # docs/media/fronts-step4.svg from case-step1 and the three Step 4 runs
+```
+
+`make metrics` takes any case with results. `readme-fronts` fails before
+writing anything unless every run finished: its solver log ends with `End`
+and it wrote the `endTime` of its `controlDict` (`--require-finished`). The
+front speed takes the front at 3 and 8 s, interpolated linearly between
+written times. In the JSON output (`--json`), undefined values are `null`.
+
+![Front position against time over 20 s: water close to Ritter's frictionless front, the low, central and high molasses viscosities progressively slower](docs/media/fronts-step4.svg)
+
+*Front position of the reference runs (0.5 m mesh) against Ritter's
+frictionless front. The runs separate after ~3 s; after 20 s the front of the
+high-viscosity molasses is at 133 m. A line stops at the first written front
+within 1 m of the outlet.*
+
+| Check                                        | Steps 1–3 (water) | Step 4 low | Step 4 central | Step 4 high |
+|----------------------------------------------|-------------------|------------|----------------|-------------|
+| Re = √(gH) H / ν₀                            | 1.3·10⁸           | 9.3·10³    | 3.4·10³        | 930         |
+| Front speed 3–8 s [m/s] (Ritter: 21.7)       | 20.5              | 15.4       | 12.9           | 8.7         |
+| Front at x = 50 / 100 / 150 m [s]            | 3.0 / 5.5 / 8.0   | 3.0 / 6.0 / 9.5 | 3.0 / 6.5 / 11.5 | 3.5 / 9.5 / – |
+| Liquid volume until liquid reaches the outlet column [m²] | 144.000 (9 s) | 144.000 (9.5 s) | 144.000 (10.5 s) | 144.000 (15 s) |
+| Liquid left at 20 s [m²]                     | 80.5              | 109.5      | 134.5          | 143.9       |
+| T bounds [K]                                 | [277.15, 293.15] (Steps 2–3) | [277.15, 283.15] | [277.15, 283.15] | [277.15, 283.15] |
+| Max cooling of liquid cells (alpha > 0.99) [K] | 4.5·10⁻³ (Steps 2–3) | 3.4·10⁻³ | 5.0·10⁻³    | 1.4·10⁻²    |
+| Max first-cell wall shear [Pa]               | 0.07              | 1.3·10³    | 3.3·10³        | 9.9·10³     |
+
+- alpha stays within [−3.9·10⁻⁵, 1 + 4.3·10⁻⁵] in these six runs on the
+  0.5 m mesh (solver logs; the 0.25 m run is in the mesh study below).
+- Steps 1–3 give the same front and volume: the energy equation is one-way
+  coupled while mu is constant (the Step 1 and Step 2 velocities at t = 5 s
+  are bit-identical), and mu(T) changes by 0.01 % in Step 3.
+- In these six runs the volume, integrated from the unclipped alpha, deviates
+  by at most 1.2·10⁻⁴ m² until liquid reaches the outlet column: until the
+  first written time at which the last column holds alpha > 10⁻³ (the
+  times in brackets above). That is not the start of the outflow through
+  the boundary, which is not measured: liquid below the threshold can leave
+  earlier.
+
+**Liquid ahead of the front.** The bottom one or two cells ahead of the
+front hold 1–4 % liquid that travels with the air pushed ahead by the
+collapse (15–24 m/s just above the layer): a cell has one velocity, so the
+liquid in it moves with the air. It adds only 0.02–0.05 m of depth, but a
+front taken at h ≥ 0.05 m would run at 17.9 instead of 12.9 m/s for the
+central molasses. It shrinks on a 0.25 m mesh (14.1 m/s), so it is
+numerical, and the 0.25 m depth threshold leaves it out. It also reaches the
+outlet early: the high-viscosity run loses 0.08 m² by 20 s while its front
+is at 133 m.
+
+**Mesh study.** Step 4 central on a 0.25 m mesh (720 × 80 cells: set
+`(720 80 1)` in `system/blockMeshDict` of a copied case):
+
+|                                    | 0.5 m (reference) | 0.25 m  |
+|------------------------------------|-------------------|---------|
+| Front speed 3–8 s [m/s]            | 12.9              | 12.1    |
+| Front at x = 50 / 100 / 150 m [s]  | 3.0 / 6.5 / 11.5  | 3.0 / 7.0 / 12.5 |
+| Liquid left at 20 s [m²]           | 134.5             | 139.9   |
+| Volume deviation until liquid reaches the outlet column [m²] | 1.2·10⁻⁴ (10.5 s) | 2.1·10⁻⁴ (11.5 s) |
+| alpha bounds (solver log)          | [−2.5·10⁻⁵, 1 + 4.3·10⁻⁵] | [−3.8·10⁻⁵, 1 + 6.7·10⁻⁵] |
+| Max first-cell wall shear [Pa]     | 3.3·10³           | 6.3·10³ |
+| Time steps, CPU time               | 1,454, 56 s       | 2,990, 418 s |
+
+Up to x ≈ 100 m (~7 s) the two meshes agree within one write interval
+(0.5 s), and the front speeds within 7 %, well below the spread between the
+viscosity variants. Later, as the layer thins to one or two cells, the
+arrival times differ by ~10 %, less liquid has left by 20 s, and the wall
+shear doubles: that stage is not mesh-converged.
 
 ## Animations
 
@@ -296,7 +368,7 @@ make anim ANIM_PANELS=flow,depth,froude ANIM_ARGS='--t-max 10' # other panels
 `run-anim` copies the inputs of `CASE_DIR` into `ANIM_DIR`
 (default `case-anim-step$(ANIM_STEP)`), sets `endTime` / `writeInterval`
 (`ANIM_END`, `ANIM_WRITE`) and runs `run-stepN` there, so the reference runs
-keep their 60 s / 0.5 s output. `anim` writes the cell centres (`0/C`, used to
+keep their 20 s / 0.5 s output. `anim` writes the cell centres (`0/C`, used to
 recover the grid; uniform grids only for now) and calls
 `uv run python -m post.animate` (see `--help` for speed, resolution, GIF frame
 rate, time range, title). Frames are rendered once at 1920 px; the mp4
@@ -343,7 +415,7 @@ front speed or shape is realistic.
   penetration depth √(κ t / ρCp) is ~2.5 mm (molasses) to ~2.9 mm (water)
   after one minute, i.e. far below one cell; what exchange there is happens in the
   mixed interface cells. In the reference runs the liquid cells
-  (alpha > 0.99) cool by < 0.01 K within 60 s and mu(T) changes by ≤ 1 %, so
+  (alpha > 0.99) cool by ≤ 0.014 K within 20 s and mu(T) changes by ≤ 0.15 %, so
   Steps 2–4 verify the code path rather than predict cooling. Cooling-driven thickening (minutes
   to hours) needs resolved thermal boundary layers, air-side convection and
   much longer runs.
@@ -352,14 +424,16 @@ front speed or shape is realistic.
   friction law), so the wall shear is μ u₁ / (Δy/2) with the first-cell
   velocity u₁. In the Step 2 animation run it is ~0.05 Pa, while a Manning
   estimate (n = 0.015) gives ~200–260 Pa at Re = uh/ν ~ 10⁷: the water front
-  runs nearly frictionless (front speed 94 % of Ritter's 2√(gH)). For
-  molasses (former placeholder μ0 = 5 Pa s) it gave ~400 Pa, but it depends on
-  the mesh, because the laminar boundary layer √(ν t) (~6 cm after 1 s with
-  the placeholder, ~20 cm with μ0 = 55 Pa s) is not resolved by the 0.5 m
-  cells.
-- **Thin-layer stage under-resolved.** Viscosity matters mostly once the
-  layer is thin (h < 1 m = 2 cells); bottom-graded or refined meshes are
-  needed there.
+  runs nearly frictionless (front speed 94 % of Ritter's 2√(gH)). For the
+  molasses it reaches 1.3, 3.3 and 9.9 kPa (low, central, high), but it
+  depends on the mesh (6.3 kPa for the central molasses on a 0.25 m mesh),
+  because the laminar boundary layer √(ν t) (~12, 20 and 37 cm after 1 s) is
+  not resolved by the 0.5 m cells.
+- **Thin-layer stage not resolved.** From ~10 s on, the molasses layer is
+  one or two cells thick, which is where the viscosity matters most and where
+  the 0.5 m mesh is not converged (see the mesh study under
+  [Reference runs](#reference-runs)). The runs therefore stop at 20 s; the
+  spreading stage needs a bottom-refined mesh and a longer domain.
 - The vertical open boundary (`right`, `p_rgh = 0`) acts as a free overfall;
   fine for the supercritical dam-break front, not for subcritical outflow.
 - Air-side convection/turbulence and radiation are not modelled; density is

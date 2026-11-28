@@ -23,7 +23,11 @@ startTime       0;
 
 stopAt          endTime;
 
-endTime         60;
+// The wave stage on the 180 m domain: the fronts of water and the low and
+// central molasses come within 1 m of the open end after 9.5-16.5 s. Later
+// the layer is 1-2 cells thick and drains over the outlet, which this mesh
+// does not resolve (README, Reference runs)
+endTime         20;
 
 deltaT          1e-3;
 

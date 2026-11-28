@@ -72,7 +72,8 @@ class Frame:
 
     Attributes:
         time: Simulation time [s].
-        alpha: Liquid volume fraction, clipped to [0, 1].
+        alpha_raw: Liquid volume fraction as written by the solver; it can
+            leave [0, 1] by the solver's bounding error (see ``alpha``).
         ux: Velocity component along x [m/s].
         uy: Velocity component along y [m/s].
         temperature: Temperature [K], or None if not loaded.
@@ -80,11 +81,16 @@ class Frame:
     """
 
     time: float
-    alpha: np.ndarray
+    alpha_raw: np.ndarray
     ux: np.ndarray
     uy: np.ndarray
     temperature: np.ndarray | None
     dy: float
+
+    @property
+    def alpha(self) -> np.ndarray:
+        """Liquid volume fraction clipped to [0, 1], for plots, depth and front."""
+        return np.clip(self.alpha_raw, 0.0, 1.0)
 
     @property
     def speed(self) -> np.ndarray:
@@ -159,7 +165,7 @@ def load_frame(info: CaseInfo, time_name: str, temperature: bool = True) -> Fram
     u = grid.to_2d(read_internal_field(field_path(tdir, "U"), n))
     return Frame(
         time=float(time_name),
-        alpha=grid.to_2d(np.clip(read_internal_field(field_path(tdir, LIQUID), n), 0.0, 1.0)),
+        alpha_raw=grid.to_2d(read_internal_field(field_path(tdir, LIQUID), n)),
         ux=u[..., 0],
         uy=u[..., 1],
         temperature=grid.to_2d(read_internal_field(field_path(tdir, "T"), n)) if temperature else None,
