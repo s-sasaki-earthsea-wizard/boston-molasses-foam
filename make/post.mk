@@ -9,6 +9,8 @@
 #   metrics     front, volume and bounds of METRICS_DIRS (python -m post.metrics)
 #   readme-fronts  plot the fronts of the README reference runs to docs/media
 #   readme-step5   fronts and depth profiles of the Step 5 runs against Huppert
+#               (both fail before writing unless every run finished and wrote
+#               the times they show)
 #
 # Example: make run-anim anim ANIM_STEP=4
 #          make anim ANIM_PANELS=flow,depth,froude ANIM_ARGS='--t-max 10'
@@ -30,7 +32,7 @@ README_FRONTS     := docs/media/fronts-step4.svg
 README_FRONT_DIRS ?= case-step1 case-step4-low case-step4-central case-step4-high
 README_STEP5_DIRS ?= case-step5-low case-step5-central case-step5-high
 README_STEP5_T    := 30 120 300 600
-README_STEP5_ARGS := --arrival 100 200 300 --front-at $(README_STEP5_T) --huppert \
+README_STEP5_ARGS := --require-finished --arrival 100 200 300 --front-at $(README_STEP5_T) --huppert \
 	--plot docs/media/fronts-step5.svg \
 	--profiles docs/media/profiles-step5.svg --profile-times $(README_STEP5_T)
 
@@ -62,7 +64,8 @@ metrics: ## Front, volume and bounds of METRICS_DIRS (default CASE_DIR; host: uv
 	uv run python -m post.metrics $(METRICS_DIRS) $(METRICS_ARGS)
 
 readme-fronts: ## Plot the fronts of README_FRONT_DIRS to docs/media/fronts-step4.svg
-	$(MAKE) --no-print-directory metrics METRICS_DIRS="$(README_FRONT_DIRS)" METRICS_ARGS="--plot $(README_FRONTS)"
+	$(MAKE) --no-print-directory metrics METRICS_DIRS="$(README_FRONT_DIRS)" \
+		METRICS_ARGS="--require-finished --plot $(README_FRONTS)"
 
 readme-step5: ## Plot fronts and depth profiles of README_STEP5_DIRS to docs/media/*-step5.svg
 	$(MAKE) --no-print-directory metrics METRICS_DIRS="$(README_STEP5_DIRS)" METRICS_ARGS="$(README_STEP5_ARGS)"

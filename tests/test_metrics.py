@@ -10,7 +10,7 @@ import pytest
 
 from post import metrics
 from post.analytic import huppert
-from post.frames import load_case
+from post.frames import load_case, load_frame
 from post.metrics import evaluate
 from tests.foamcase import column_alpha, write_case
 
@@ -167,3 +167,54 @@ def test_huppert_legend_only_with_a_curve(tmp_path: Path, figures: list, step: i
     m = evaluate(case, profile_times=times)
     metrics.plot_profiles([m], [load_case(case)], tmp_path / "profiles.svg", with_huppert=True)
     assert any("Huppert" in t for t in _legend_texts(figures[0])) == expected
+
+
+def _two_cases(tmp_path: Path, finished: bool = True) -> tuple[Path, Path]:
+    """Two Step 5 cases; the second stopped before 300 s."""
+    full = _front_case(tmp_path / "full", 120.0, {"0": 10.0, "30": 40.0, "300": 60.0}, step=5, depth=0.3)
+    short = write_case(tmp_path / "short", np.linspace(0.0, 120.0, 241), Y_FACES,
+                       {name: fields for name, fields in _fields_of(full).items() if name != "300"},
+                       step=5, variant="high", finished=finished)
+    return full, short
+
+
+def _fields_of(case: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    info = load_case(case)
+    frames = {name: load_frame(info, name, temperature=False) for name in info.times}
+    return {name: (f.alpha, f.ux) for name, f in frames.items()}
+
+
+@pytest.mark.parametrize("order", [(0, 1), (1, 0)])
+def test_missing_profile_time_fails_before_output(tmp_path: Path, capsys: pytest.CaptureFixture,
+                                                  order: tuple[int, int]) -> None:
+    pair = _two_cases(tmp_path)
+    cases = [pair[i] for i in order]
+    out = tmp_path / "profiles.svg"
+    status = metrics.main([*map(str, cases), "--profiles", str(out), "--profile-times", "30", "300"])
+    err = capsys.readouterr()
+    assert status == 1
+    assert not out.exists()
+    assert "short: no output at t = 300 s" in err.err
+    assert err.out == ""
+
+
+def test_allow_missing_names_the_case_in_the_panel(tmp_path: Path, figures: list,
+                                                   capsys: pytest.CaptureFixture) -> None:
+    short, full = _two_cases(tmp_path)[::-1]
+    status = metrics.main([str(short), str(full), "--profiles", str(tmp_path / "p.svg"),
+                           "--profile-times", "30", "300", "--allow-missing"])
+    assert status == 0
+    assert "Warning:" in capsys.readouterr().err
+    (fig,) = figures
+    assert len(fig.axes) == 2  # both requested times, though the first case lacks 300 s
+    texts = [t.get_text() for t in fig.axes[1].texts]
+    assert any(t.startswith("no output: Step 5 high") for t in texts)
+    assert sum("Step 5" in t for t in _legend_texts(fig)) == 2
+
+
+def test_require_finished(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    full, short = _two_cases(tmp_path, finished=False)
+    assert metrics.main([str(full), str(short), "--front-at", "30"]) == 0
+    capsys.readouterr()
+    assert metrics.main([str(full), str(short), "--front-at", "30", "--require-finished"]) == 1
+    assert "short: log.interThermalFoam.step5 does not end with End" in capsys.readouterr().err

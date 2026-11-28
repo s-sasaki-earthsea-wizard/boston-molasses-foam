@@ -4,11 +4,17 @@ Usage (from the project root; ``make metrics`` wraps this):
 
     uv run python -m post.metrics CASE_DIR [CASE_DIR ...] [--json FILE] [--plot FILE]
         [--arrival X ...] [--front-at T ...] [--huppert]
-        [--profiles FILE --profile-times T ...]
+        [--profiles FILE --profile-times T ...] [--allow-missing] [--require-finished]
 
 Each case needs the cell centres in ``0/C`` (``postProcess -func
 writeCellCentres -time 0``), its mesh points and its solver log
 ``log.interThermalFoam.stepN``. Uniform and graded meshes are supported.
+
+Every case must have written every time of ``--front-at`` and
+``--profile-times``; otherwise nothing is computed or written and the exit
+status is 1, unless ``--allow-missing`` (the depth panels then name the cases
+without a profile). ``--require-finished`` also fails on a solver log that
+does not end with ``End``; the README figures use it.
 
 The front is the largest cell-centre x where the liquid depth
 h(x) = sum(alpha dy) is at least ``FRONT_DEPTH`` = 0.25 m. Thinner liquid
@@ -34,7 +40,7 @@ from pathlib import Path
 import numpy as np
 
 from post.analytic import huppert, huppert_front
-from post.foamio import read_entry, read_text
+from post.foamio import read_entry, read_text, time_dirs
 from post.frames import CaseInfo, Frame, load_case, load_frame
 
 FRONT_DEPTH = 0.25  # [m] front: last column with h >= FRONT_DEPTH
@@ -646,22 +652,36 @@ def plot_fronts(
 
 
 def plot_profiles(
-    results: list[CaseMetrics], infos: list[CaseInfo], out: Path, with_huppert: bool = False
+    results: list[CaseMetrics],
+    infos: list[CaseInfo],
+    out: Path,
+    with_huppert: bool = False,
+    times: tuple[float, ...] | None = None,
 ) -> None:
     """Depth profiles h(x) at the kept times, one panel per time.
 
     The depth axis is shared by the panels and covers the drawn Huppert
-    profiles too; the x axis spans the longest domain.
+    profiles too; the x axis spans the longest domain. A case without a
+    profile at a panel's time is named in that panel.
 
     Args:
-        results: Metrics of the cases, with the same profile times.
+        results: Metrics of the cases.
         infos: Case information, in the same order.
         out: Output file (.svg or .png).
         with_huppert: Also draw Huppert's profile of each viscous case.
+        times: Times [s] of the panels; those no case kept are left out.
+            Default: every kept time.
+
+    Raises:
+        ValueError: If no case kept a profile at any of the times.
     """
     from post import plot as pp
 
-    keys = list(results[0].profiles)
+    kept = {k for m in results for k in m.profiles}
+    if times is None:
+        keys = sorted(kept, key=float)
+    else:
+        keys = [k for k in dict.fromkeys(f"{t:g}" for t in times) if k in kept]
     if not keys:
         raise ValueError("no depth profiles kept: give --profile-times that were written")
     with_mesh = len({m.mesh for m in results}) > 1
@@ -674,8 +694,10 @@ def plot_profiles(
     for ax, key in zip(axes, keys):
         t = float(key)
         drawn: set[float] = set()
+        absent = []
         for m, inf, style in zip(results, infos, styles):
             if key not in m.profiles:
+                absent.append(case_label(m, with_mesh))
                 continue
             ax.plot(m.profile_x, m.profiles[key], label=case_label(m, with_mesh), **style)
             if with_huppert and t > 0 and m.step is not None and m.step >= 4 and m.mu0 not in drawn:
@@ -687,11 +709,18 @@ def plot_profiles(
                 any_huppert = True
         ax.text(0.99, 0.92, f"t = {key} s", transform=ax.transAxes, ha="right", va="top",
                 color=pp.INK_SECONDARY, fontsize=8)
+        if absent:
+            ax.text(0.99, 0.78, "no output: " + ", ".join(absent), transform=ax.transAxes,
+                    ha="right", va="top", color=pp.INK_SECONDARY, fontsize=7.5)
         ax.grid(True, color=pp.GRIDLINE, lw=0.6)
     for ax in axes:
         ax.set(xlim=(x_wall, x_end), ylim=(0, 1.1 * h_max), ylabel="depth h [m]")
     axes[-1].set_xlabel("x [m]")
-    handles, _ = axes[0].get_legend_handles_labels()
+    handles = list(axes[0].get_legend_handles_labels()[0])
+    labels = {h.get_label() for h in handles}
+    for ax in axes[1:]:  # cases missing from the first panel
+        handles += [h for h in ax.get_legend_handles_labels()[0] if h.get_label() not in labels]
+        labels |= {h.get_label() for h in handles}
     if any_huppert:
         handles.append(_huppert_handle(1.2))
     # Above the first panel: inside, it covered the deep early profiles
@@ -702,6 +731,35 @@ def plot_profiles(
 
 def _floats(text: str) -> tuple[float, ...]:
     return tuple(float(v) for v in text.replace(",", " ").split())
+
+
+def check_inputs(
+    cases: list[Path], times: tuple[float, ...], require_finished: bool
+) -> tuple[list[str], list[str]]:
+    """Check the cases before anything is computed.
+
+    Args:
+        cases: Case directories.
+        times: Times [s] every case must have written.
+        require_finished: Also check that every solver log ends with "End".
+
+    Returns:
+        One line per case with missing times, and one per unfinished case
+        (empty unless ``require_finished``).
+    """
+    missing, unfinished = [], []
+    for case in cases:
+        written = np.array([float(n) for n in time_dirs(case)])
+        absent = [t for t in times if _index(written, t) is None]
+        if absent:
+            missing.append(f"{case}: no output at t = {', '.join(f'{t:g}' for t in absent)} s")
+        if require_finished:
+            log = read_log(case)
+            if log is None:
+                unfinished.append(f"{case}: no solver log (log.interThermalFoam.step*)")
+            elif not log.finished:
+                unfinished.append(f"{case}: {Path(log.path).name} does not end with End")
+    return missing, unfinished
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -718,6 +776,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--profiles", type=Path, help="plot depth profiles at --profile-times to this file")
     p.add_argument("--profile-times", type=float, nargs="+", default=[], metavar="T",
                    help="times [s] of the depth profiles")
+    p.add_argument("--allow-missing", action="store_true",
+                   help="go on when a case did not write a --front-at or --profile-times time "
+                        "(default: fail before any output)")
+    p.add_argument("--require-finished", action="store_true",
+                   help="fail unless every solver log ends with End")
     args = p.parse_args(argv)
     if args.profiles and not args.profile_times:
         p.error("--profiles needs --profile-times")
@@ -726,6 +789,18 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    missing, unfinished = check_inputs(
+        args.cases, tuple(dict.fromkeys([*args.front_at, *args.profile_times])), args.require_finished)
+    errors = unfinished + ([] if args.allow_missing else missing)
+    if errors:
+        for line in errors:
+            print(f"Error: {line}", file=sys.stderr)
+        if missing and not args.allow_missing:
+            print("Give --allow-missing to go on without those times.", file=sys.stderr)
+        return 1
+    for line in missing:
+        print(f"Warning: {line}; left out", file=sys.stderr)
+
     results = [evaluate(c, tuple(args.arrival), tuple(args.front_at), tuple(args.profile_times))
                for c in args.cases]
     print(f"Front: last column with depth >= {FRONT_DEPTH:g} m\n")
@@ -740,7 +815,7 @@ def main(argv: list[str] | None = None) -> int:
             plot_fronts(results, infos, args.plot, args.huppert)
             print(f"wrote {args.plot}")
         if args.profiles:
-            plot_profiles(results, infos, args.profiles, args.huppert)
+            plot_profiles(results, infos, args.profiles, args.huppert, tuple(args.profile_times))
             print(f"wrote {args.profiles}")
     return 0
 
