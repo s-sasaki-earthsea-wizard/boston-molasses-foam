@@ -209,3 +209,18 @@ def test_fronts_stop_at_their_own_outlet(tmp_path: Path, figures: list, order: t
     assert ax.get_ylim()[1] >= 120.0
     outlets = sorted(line.get_ydata()[0] for line in ax.get_lines() if line.get_label().startswith("_"))
     assert outlets == [40.0, 120.0]
+
+
+def test_front_plot_needs_one_initial_column(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    """Ritter's front is drawn once, so cases from other columns fail before any output."""
+    a = _front_case(tmp_path / "a", {"0": 10.0, "20": 30.0}, step=4)
+    b = _front_case(tmp_path / "b", {"0": 15.0, "20": 30.0}, step=4)
+    out = tmp_path / "fronts.svg"
+    assert metrics.main([str(a), str(b), "--plot", str(out)]) == 1
+    err = capsys.readouterr()
+    assert "b starts from another column than" in err.err
+    assert "x_dam = 15 against 10 m" in err.err
+    assert err.out == "" and not out.exists()
+    assert metrics.main([str(a), str(b)]) == 0  # the table alone does not need one
+    with pytest.raises(ValueError, match="another column"):
+        metrics.plot_fronts([evaluate(a), evaluate(b)], [load_case(a), load_case(b)], out)

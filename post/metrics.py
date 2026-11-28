@@ -300,11 +300,31 @@ def table(results: list[CaseMetrics]) -> str:
     return "\n".join([head, sep] + [f"| {name} | " + " | ".join(vals) + " |" for name, vals in rows])
 
 
+def check_columns(infos: list[CaseInfo]) -> str | None:
+    """Why the cases cannot share one Ritter front in a plot (None if they can).
+
+    Ritter's front depends on the end x_dam and the height H of the initial
+    column and on g.
+    """
+    first = infos[0]
+    for inf in infos[1:]:
+        if not np.allclose([inf.x_dam, inf.h0, inf.g], [first.x_dam, first.h0, first.g]):
+            return (f"{inf.path} starts from another column than {first.path} "
+                    f"(x_dam = {inf.x_dam:g} against {first.x_dam:g} m, H = {inf.h0:g} against {first.h0:g} m, "
+                    f"g = {inf.g:g} against {first.g:g} m/s²); the front plot has one Ritter front")
+    return None
+
+
 def plot_fronts(results: list[CaseMetrics], infos: list[CaseInfo], out: Path) -> None:
     """Front position over time against Ritter's front, saved as SVG or PNG.
 
     Each front stops at the outlet of its own domain; every outlet is drawn.
+
+    Raises:
+        ValueError: If the cases start from different columns (``check_columns``).
     """
+    if problem := check_columns(infos):
+        raise ValueError(problem)
     import matplotlib as mpl
 
     mpl.use("Agg")
@@ -416,6 +436,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     # Read once: the plot needs the cases' geometry as well
     infos = [load_case(c) for c in args.cases]
+    if args.plot and (problem := check_columns(infos)):
+        print(f"Error: {problem}", file=sys.stderr)
+        return 1
     results = [evaluate(c, inf) for c, inf in zip(args.cases, infos)]
     print(f"Front: last column with depth >= {FRONT_DEPTH:g} m\n")
     print(table(results))
