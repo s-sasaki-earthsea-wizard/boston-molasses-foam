@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -336,10 +337,21 @@ def plot_fronts(results: list[CaseMetrics], infos: list[CaseInfo], out: Path) ->
     fig.savefig(out, dpi=150, metadata=metadata)
 
 
+def _json_safe(value):
+    """``value`` with every non-finite float replaced by None (null in JSON)."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="python -m post.metrics", description=__doc__.split("\n")[0])
     p.add_argument("cases", type=Path, nargs="+", help="case directories with results")
-    p.add_argument("--json", type=Path, help="also write the metrics (with the front series) as JSON")
+    p.add_argument("--json", type=Path, help="also write the metrics (with the front series) as JSON; undefined values are null")
     p.add_argument("--plot", type=Path, help="plot the front positions to this file (.svg or .png)")
     return p.parse_args(argv)
 
@@ -351,7 +363,8 @@ def main(argv: list[str] | None = None) -> int:
     print(table(results))
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps([asdict(m) for m in results], indent=1))
+        # Undefined values (NaN) as null: NaN is not valid JSON
+        args.json.write_text(json.dumps(_json_safe([asdict(m) for m in results]), indent=1, allow_nan=False))
         print(f"\nwrote {args.json}")
     if args.plot:
         plot_fronts(results, [load_case(c) for c in args.cases], args.plot)

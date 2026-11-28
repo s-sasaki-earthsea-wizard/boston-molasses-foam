@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -70,3 +71,21 @@ def test_outlet_wetted_from_the_first_time(tmp_path: Path) -> None:
     assert m.outlet_wetting_time == 0.0
     assert m.volume_dev is None
     assert "| largest deviation of V from V₀ before that [m²] | – |" in metrics.table([m])
+
+
+def _strict_json(text: str):
+    def reject(name: str):
+        raise ValueError(f"invalid JSON constant {name}")
+
+    return json.loads(text, parse_constant=reject)
+
+
+def test_json_writes_null_for_undefined_values(tmp_path: Path) -> None:
+    """No front at 5 s and no front speed (both NaN in the metrics) become null."""
+    case = _front_case(tmp_path / "case", {"0": 10.0, "5": 0.0}, step=4, finished=False)
+    out = tmp_path / "metrics.json"
+    assert metrics.main([str(case), "--json", str(out)]) == 0
+    (m,) = _strict_json(out.read_text())
+    assert m["front_speed"] is None
+    assert m["front_x"] == [9.75, None]
+    assert m["outlet_wetting_time"] is None
