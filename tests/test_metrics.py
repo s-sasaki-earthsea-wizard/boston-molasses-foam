@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from post import metrics
+from post.analytic import huppert
 from post.frames import load_case
 from post.metrics import evaluate
 from tests.foamcase import column_alpha, write_case
@@ -88,13 +89,13 @@ def test_film_check_without_liquid_cells(tmp_path: Path) -> None:
     assert math.isnan(film.bed_air)
 
 
-def _front_case(path: Path, length: float, fronts: dict[str, float], step: int) -> Path:
-    """A 1 m deep current over x < front at each time, on a domain of ``length``."""
+def _front_case(path: Path, length: float, fronts: dict[str, float], step: int, depth: float = 1.0) -> Path:
+    """A current of ``depth`` over x < front at each time, on a domain of ``length``."""
     x_faces = np.linspace(0.0, length, int(length / 0.5) + 1)
     x = 0.5 * (x_faces[:-1] + x_faces[1:])
     fields = {}
     for name, x_front in fronts.items():
-        alpha = column_alpha(Y_FACES, np.where(x < x_front, COLUMN if name == "0" else 1.0, 0.0))
+        alpha = column_alpha(Y_FACES, np.where(x < x_front, COLUMN if name == "0" else depth, 0.0))
         fields[name] = (alpha, np.full_like(alpha, 0.1))
     return write_case(path, x_faces, Y_FACES, fields, step=step)
 
@@ -140,3 +141,14 @@ def test_huppert_front_starts_at_huppert_from(tmp_path: Path, figures: list) -> 
     t = huppert_lines[0].get_xdata()
     assert t[0] == pytest.approx(metrics.HUPPERT_FROM)
     assert t[-1] == pytest.approx(600.0)
+
+
+def test_depth_axis_covers_huppert_profiles(tmp_path: Path, figures: list) -> None:
+    """At 30 s Huppert's current is deeper at the wall than the simulated layer."""
+    case = _front_case(tmp_path / "case", 120.0, {"0": 10.0, "30": 60.0}, step=5, depth=0.3)
+    m = evaluate(case, profile_times=(30.0,))
+    metrics.plot_profiles([m], [load_case(case)], tmp_path / "profiles.svg", with_huppert=True)
+    (ax,) = figures[0].axes
+    wall_depth = huppert(np.array([0.0]), 30.0, m.volume0, 9.81, m.mu0 / m.rho).depth[0]
+    assert wall_depth > max(m.profiles["30"])  # the case this test is about
+    assert ax.get_ylim()[1] >= wall_depth

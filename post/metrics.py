@@ -650,7 +650,8 @@ def plot_profiles(
 ) -> None:
     """Depth profiles h(x) at the kept times, one panel per time.
 
-    The x axis spans the longest domain.
+    The depth axis is shared by the panels and covers the drawn Huppert
+    profiles too; the x axis spans the longest domain.
 
     Args:
         results: Metrics of the cases, with the same profile times.
@@ -679,12 +680,14 @@ def plot_profiles(
             if with_huppert and t > 0 and m.step is not None and m.step >= 4 and m.mu0 not in drawn:
                 drawn.add(m.mu0)
                 x = np.linspace(inf.x_wall, x_end, 2001)
-                ax.plot(x, huppert(x, t, m.volume0, inf.g, m.mu0 / m.rho, inf.x_wall).depth,
-                        color=style["color"], lw=1.2, ls=_HUPPERT_LS)
+                depth = huppert(x, t, m.volume0, inf.g, m.mu0 / m.rho, inf.x_wall).depth
+                ax.plot(x, depth, color=style["color"], lw=1.2, ls=_HUPPERT_LS)
+                h_max = max(h_max, float(np.nanmax(depth)))
         ax.text(0.99, 0.92, f"t = {key} s", transform=ax.transAxes, ha="right", va="top",
                 color=pp.INK_SECONDARY, fontsize=8)
-        ax.set(xlim=(x_wall, x_end), ylim=(0, 1.1 * h_max), ylabel="depth h [m]")
         ax.grid(True, color=pp.GRIDLINE, lw=0.6)
+    for ax in axes:
+        ax.set(xlim=(x_wall, x_end), ylim=(0, 1.1 * h_max), ylabel="depth h [m]")
     axes[-1].set_xlabel("x [m]")
     handles, _ = axes[0].get_legend_handles_labels()
     if with_huppert:
