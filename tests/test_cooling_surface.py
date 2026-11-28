@@ -56,6 +56,28 @@ def test_clear_forced_part_averages_to_the_flat_plate_mean() -> None:
     assert h == pytest.approx(expected, rel=1e-3)
 
 
+def test_clear_forced_part_for_a_cold_surface_is_the_mixed_boundary_layer() -> None:
+    # Laminar up to Re_c = 5e5, turbulent beyond: Nu_L = (0.037 Re_L^0.8 - 871) Pr^(1/3)
+    # (Incropera et al., eq. 7.38 with A = 871), once natural convection is damped away.
+    fetch, wind, cold = 30.0, 50.0, T_AIR - 5.0
+    p = air_properties(0.5 * (cold + T_AIR))
+    re = wind * fetch / p.viscosity
+    expected = (0.037 * re**0.8 - 871.0) * p.prandtl ** (1 / 3) * p.conductivity / fetch
+    assert ClearConvection(fetch).coefficient(wind, cold, T_AIR) == pytest.approx(expected, rel=1e-3)
+
+
+def test_clear_convection_for_a_cold_surface_is_smooth() -> None:
+    # The transition point x_c = Re_c nu / v moves with the wind and the film viscosity; the mean
+    # coefficient must not jump (it did by 3 % when x_c crossed a quadrature node, and the
+    # iteration of the surface temperature then cycled between two values).
+    clear = ClearConvection(30.0)
+    wind = np.linspace(1.0, 4.0, 601)
+    h = np.array([clear.coefficient(v, T_AIR - 4.0, T_AIR) for v in wind])
+    steps = np.diff(h)
+    assert np.all(steps > 0.0)
+    assert np.max(steps) < 1.5 * np.min(steps)
+
+
 def test_clear_convection_limits() -> None:
     clear = ClearConvection(30.0)
     assert clear.coefficient(0.0, T_SURFACE, T_AIR) == pytest.approx(natural_convection(T_SURFACE, T_AIR, 7.5))

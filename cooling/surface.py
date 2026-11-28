@@ -143,7 +143,9 @@ class ClearConvection:
     0.332 Re_x^(1/2) Pr^(1/3) where it is laminar. For a surface warmer than
     the air there is no laminar part (Re_x,c ~ 0, Clear et al. 2001, p. 19);
     for a colder surface laminar flow holds up to Re_x,c = 5e5. The
-    coefficient returned is the average of h_x over the fetch.
+    coefficient returned is the average of h_x over the fetch: the forced
+    part in closed form on each side of the transition, so that it varies
+    smoothly with the transition point, and the natural part by quadrature.
 
     Args:
         fetch: Length of the surface along the wind [m].
@@ -167,17 +169,18 @@ class ClearConvection:
         p = air_properties(0.5 * (surface + air))
         beta_g = GRAVITY * abs(dt) / air
         x_c = 0.0 if dt >= 0.0 else self.critical_reynolds * p.viscosity / wind
-        # x = fetch * s^5 takes the x^(-1/5) and x^(-1/2) singularities out of the quadrature
+        # Forced part: the fetch means of 0.332 Re_x^(1/2) up to x_c and of
+        # 0.0296 Re_x^(4/5) beyond, (k/L) [0.664 Re_c^(1/2) + 0.037 (Re_L^(4/5) - Re_c^(4/5))] Pr^(1/3)
+        re_l = wind * self.fetch / p.viscosity
+        re_c = min(wind * x_c / p.viscosity, re_l)
+        nu_f = (0.664 * np.sqrt(re_c) + 0.037 * (re_l**0.8 - re_c**0.8)) * p.prandtl ** (1.0 / 3.0)
+        h_f = self.roughness * p.conductivity * nu_f / self.fetch
+        # Natural part, weighted by eta(x); x = fetch * s^5 clusters the nodes at the edge
         s = _NODES
         x = self.fetch * s**5
         jac = 5.0 * s**4  # dx / (fetch ds)
-        re = wind * x / p.viscosity
-        pr3 = p.prandtl ** (1.0 / 3.0)
-        nu_f = np.where(x >= x_c, 0.0296 * re**0.8 * pr3, 0.332 * np.sqrt(re) * pr3)
-        h_f = self.roughness * p.conductivity * nu_f / x
-        gr_re2 = beta_g * x / wind**2
-        eta = np.array([_eta(g) for g in gr_re2])
-        return float(np.sum(_WEIGHTS * jac * (eta * h_n + h_f)))
+        eta = np.array([_eta(g) for g in beta_g * x / wind**2])
+        return float(np.sum(_WEIGHTS * jac * eta) * h_n + h_f)
 
 
 @dataclass(frozen=True)
