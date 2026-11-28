@@ -5,8 +5,10 @@ surrounding atmosphere and whose viscosity depends on temperature. The setup
 is inspired by the Boston Molasses Disaster (15 January 1919).
 
 Everything runs in Docker; the host only needs `make`, `bash`, `awk` and
-Docker Compose v2. Rendering the animations additionally needs
-[uv](https://docs.astral.sh/uv/) and `ffmpeg` on the host.
+Docker Compose v2. The post-processing (`metrics`, `readme-fronts`,
+`readme-step5`, the animations) and `make test` run on the host with
+[uv](https://docs.astral.sh/uv/); rendering the animations also needs
+`ffmpeg`.
 
 ![Step 2: water dam break, liquid coloured by speed and temperature, depth against Ritter's solution](docs/media/dambreak-step2.gif)
 
@@ -41,8 +43,8 @@ so a fresh checkout goes from `make run-step4` to results in one command
 | `anim`          | Render frames, mp4 and GIF of `ANIM_DIR` (host: uv + ffmpeg)         |
 | `readme-gif`    | `anim` + copy the GIF to `docs/media/dambreak-stepN.gif`             |
 | `metrics`       | Front, volume, bounds of `METRICS_DIRS` (host: uv)                   |
-| `readme-fronts` | Plot the fronts of the reference runs to `docs/media/fronts-step4.svg` |
-| `readme-step5`  | Plot the Step 5 fronts and depth profiles to `docs/media/*-step5.svg` |
+| `readme-fronts` | Plot the fronts of the finished reference runs to `docs/media/fronts-step4.svg` |
+| `readme-step5`  | Plot the Step 5 fronts and depth profiles of finished runs to `docs/media/*-step5.svg` |
 | `clean`         | Remove time directories, solver logs, `postProcessing/`              |
 | `clean-all`     | `clean` + mesh, `0/`, `build/` and wmake objects                     |
 | `test`          | Tests of `post/` and `scripts/` (host: uv + pytest; no OpenFOAM)     |
@@ -292,9 +294,10 @@ missing, and writes a file only when it changes.
 OpenFOAM v2312 container on a 16-core Linux host, each run serial (all runs
 side by side), results on a CIFS share. Steps 1–4 simulate the first 20 s
 (`endTime`, set by `set_step.sh`), the wave stage on the 180 m domain: the
-fronts of water and of the low and central molasses reach the open end at
-x = 180 m after 9.5, 12.5 and 16.5 s, and the layer that follows is only one
-or two cells thick (see [Known limitations](#known-limitations)). Per run on
+fronts of water and of the low and central molasses come within 1 m of the
+open end at x = 180 m after 9.5, 12.5 and 16.5 s (the central one never
+reaches the last cell centre, 179.75 m), and the layer that follows is only
+one or two cells thick (see [Known limitations](#known-limitations)). Per run on
 the 0.5 m mesh: 1,300–1,700 time steps, 50–65 s CPU time, ~35 MB output (40
 compressed time directories).
 
@@ -306,36 +309,44 @@ make metrics METRICS_DIRS="case-step1 case-step2 case-step3 case-step4-low case-
 make readme-fronts    # docs/media/fronts-step4.svg from case-step1 and the three Step 4 runs
 ```
 
-`post/metrics.py` fails before writing anything when a case did not write a
-time asked for with `--front-at` or `--profile-times` (`--allow-missing`
-goes on and names the absent cases in the depth panels); `readme-fronts` and
-`readme-step5` also refuse a run whose solver log does not end with `End`
-(`--require-finished`).
+`make metrics` takes any case with results, but fails before writing
+anything when a case did not write a time asked for with `--front-at` or
+`--profile-times` (`--allow-missing` goes on and names the absent cases in
+the depth panels). `readme-fronts` and `readme-step5` also refuse a run that
+did not finish: its solver log must end with `End` and it must have written
+the `endTime` of its `controlDict` (`--require-finished`). The front speed
+takes the front at 3 and 8 s, interpolated linearly between written times.
+In the JSON output (`--json`), undefined values are `null`.
 
 ![Front position against time over 20 s: water close to Ritter's frictionless front, the low, central and high molasses viscosities progressively slower](docs/media/fronts-step4.svg)
 
 *Front position of the reference runs (0.5 m mesh) against Ritter's
 frictionless front. The runs separate after ~3 s; after 20 s the front of the
-high-viscosity molasses is at 133 m. The lines end where a front reaches the
-outlet.*
+high-viscosity molasses is at 133 m. A line stops at the first written front
+within 1 m of the outlet.*
 
 | Check                                        | Steps 1–3 (water) | Step 4 low | Step 4 central | Step 4 high |
 |----------------------------------------------|-------------------|------------|----------------|-------------|
 | Re = √(gH) H / ν₀                            | 1.3·10⁸           | 9.3·10³    | 3.4·10³        | 930         |
 | Front speed 3–8 s [m/s] (Ritter: 21.7)       | 20.5              | 15.4       | 12.9           | 8.7         |
 | Front at x = 50 / 100 / 150 m [s]            | 3.0 / 5.5 / 8.0   | 3.0 / 6.0 / 9.5 | 3.0 / 6.5 / 11.5 | 3.5 / 9.5 / – |
-| Liquid volume until outflow starts [m²]      | 144.000 (9 s)     | 144.000 (9.5 s) | 144.000 (10.5 s) | 144.000 (15 s) |
+| Liquid volume until liquid reaches the outlet column [m²] | 144.000 (9 s) | 144.000 (9.5 s) | 144.000 (10.5 s) | 144.000 (15 s) |
 | Liquid left at 20 s [m²]                     | 80.5              | 109.5      | 134.5          | 143.9       |
 | T bounds [K]                                 | [277.15, 293.15] (Steps 2–3) | [277.15, 283.15] | [277.15, 283.15] | [277.15, 283.15] |
 | Max cooling of liquid cells (alpha > 0.99) [K] | 4.5·10⁻³ (Steps 2–3) | 3.4·10⁻³ | 5.0·10⁻³    | 1.4·10⁻²    |
 | Max first-cell wall shear [Pa]               | 0.07              | 1.3·10³    | 3.3·10³        | 9.9·10³     |
 
-- alpha stays within [−3.9·10⁻⁵, 1 + 4.3·10⁻⁵] in all runs.
+- alpha stays within [−3.9·10⁻⁵, 1 + 4.3·10⁻⁵] in these six runs on the
+  0.5 m mesh (solver logs; the 0.25 m run is in the mesh study below).
 - Steps 1–3 give the same front and volume: the energy equation is one-way
   coupled while mu is constant (the Step 1 and Step 2 velocities at t = 5 s
   are bit-identical), and mu(T) changes by 0.01 % in Step 3.
-- The volume deviates by at most 1.4·10⁻⁴ m² until liquid reaches the
-  outlet column.
+- In these six runs the volume, integrated from the unclipped alpha, deviates
+  by at most 1.2·10⁻⁴ m² until liquid reaches the outlet column: until the
+  first written time at which the last column holds alpha > 10⁻³ (the
+  times in brackets above). That is not the start of the outflow through
+  the boundary, which is not measured: liquid below the threshold can leave
+  earlier.
 
 **Liquid ahead of the front.** The bottom one or two cells ahead of the
 front hold 1–4 % liquid that travels with the air pushed ahead by the
@@ -355,6 +366,8 @@ is at 133 m.
 | Front speed 3–8 s [m/s]            | 12.9              | 12.1    |
 | Front at x = 50 / 100 / 150 m [s]  | 3.0 / 6.5 / 11.5  | 3.0 / 7.0 / 12.5 |
 | Liquid left at 20 s [m²]           | 134.5             | 139.9   |
+| Volume deviation until liquid reaches the outlet column [m²] | 1.2·10⁻⁴ (10.5 s) | 2.1·10⁻⁴ (11.5 s) |
+| alpha bounds (solver log)          | [−2.5·10⁻⁵, 1 + 4.3·10⁻⁵] | [−3.8·10⁻⁵, 1 + 6.7·10⁻⁵] |
 | Max first-cell wall shear [Pa]     | 3.3·10³           | 6.3·10³ |
 | Time steps, CPU time               | 1,454, 56 s       | 2,990, 418 s |
 

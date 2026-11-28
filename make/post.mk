@@ -63,9 +63,9 @@ metrics: ## Front, volume and bounds of METRICS_DIRS (default CASE_DIR; host: uv
 	$(foreach d,$(METRICS_DIRS),$(call need_centres,$(d)))
 	uv run python -m post.metrics $(METRICS_DIRS) $(METRICS_ARGS)
 
-readme-fronts: ## Plot the fronts of README_FRONT_DIRS to docs/media/fronts-step4.svg
+readme-fronts: ## Plot the fronts of README_FRONT_DIRS to docs/media/fronts-step4.svg (finished runs only)
 	$(MAKE) --no-print-directory metrics METRICS_DIRS="$(README_FRONT_DIRS)" \
 		METRICS_ARGS="--require-finished --plot $(README_FRONTS)"
 
-readme-step5: ## Plot fronts and depth profiles of README_STEP5_DIRS to docs/media/*-step5.svg
+readme-step5: ## Plot fronts and depth profiles of README_STEP5_DIRS to docs/media/*-step5.svg (finished runs only)
 	$(MAKE) --no-print-directory metrics METRICS_DIRS="$(README_STEP5_DIRS)" METRICS_ARGS="$(README_STEP5_ARGS)"

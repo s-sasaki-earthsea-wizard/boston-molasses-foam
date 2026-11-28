@@ -13,8 +13,10 @@ writeCellCentres -time 0``), its mesh points and its solver log
 Every case must have written every time of ``--front-at`` and
 ``--profile-times``; otherwise nothing is computed or written and the exit
 status is 1, unless ``--allow-missing`` (the depth panels then name the cases
-without a profile). ``--require-finished`` also fails on a solver log that
-does not end with ``End``; the README figures use it.
+without a profile). ``--require-finished`` also fails unless every solver log
+ends with ``End`` and every case wrote the ``endTime`` of its
+``controlDict``; the README figures use it. In the JSON output, undefined
+values are null.
 
 The front is the largest cell-centre x where the liquid depth
 h(x) = sum(alpha dy) is at least ``FRONT_DEPTH`` = 0.25 m. Thinner liquid
@@ -31,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -44,10 +47,10 @@ from post.foamio import read_entry, read_text, time_dirs
 from post.frames import CaseInfo, Frame, load_case, load_frame
 
 FRONT_DEPTH = 0.25  # [m] front: last column with h >= FRONT_DEPTH
-SPEED_WINDOW = (3.0, 8.0)  # [s] front speed (x(t1) - x(t0)) / (t1 - t0)
+SPEED_WINDOW = (3.0, 8.0)  # [s] front speed (x(t1) - x(t0)) / (t1 - t0), see _interpolate
 ARRIVAL_X = (50.0, 100.0, 150.0)  # [m] arrival times of the front (default)
 HUPPERT_FROM = 5.0  # [s] Huppert curves are drawn from this time on
-OUTLET_ALPHA = 1e-3  # outflow starts when the last column holds more liquid
+OUTLET_ALPHA = 1e-3  # the outlet (last) column counts as wetted once it holds more liquid
 CORE_ALPHA = 0.99  # cells counted as liquid for the cooling
 OUTLET_MARGIN = 1.0  # [m] plotted fronts end this close to the outlet
 READ_THREADS = 16  # concurrent reads (network shares are latency-bound)
@@ -174,6 +177,13 @@ class CaseMetrics:
     """Metrics of one case; NaN or None where not defined.
 
     Huppert's values (``huppert_*``) are NaN for the water steps (1-3).
+
+    ``outlet_wetting_time`` is the first written time at which the outlet
+    (last) column holds alpha > ``OUTLET_ALPHA``. It is not the start of the
+    outflow through the boundary: liquid can leave below the threshold, or
+    sit in the column before it crosses the boundary. ``volume_dev`` is the
+    largest |V - V0| over the written times before it (all of them if the
+    outlet column stays dry; None if it is wetted from the first one).
     """
 
     case: str
@@ -200,9 +210,9 @@ class CaseMetrics:
     film: dict[str, FilmCheck]
     profiles: dict[str, list[float]] = field(repr=False)
     profile_x: list[float] = field(repr=False)
-    outflow_start: float | None
+    outlet_wetting_time: float | None
     volume0: float
-    volume_dev: float
+    volume_dev: float | None
     volume_end: float
     cooling: float | None
     mu_change: float | None
@@ -258,6 +268,18 @@ def _index(times: np.ndarray, t: float) -> int | None:
 def _at(times: np.ndarray, values: np.ndarray, t: float) -> float:
     i = _index(times, t)
     return float(values[i]) if i is not None else float("nan")
+
+
+def _interpolate(times: np.ndarray, values: np.ndarray, t: float) -> float:
+    """``values`` at time ``t``, linear between the written times.
+
+    NaN if ``t`` lies outside the written times or a neighbouring value is
+    NaN, so that a speed is never extrapolated.
+    """
+    lo, hi = times[0], times[-1]
+    if (t < lo and not np.isclose(t, lo)) or (t > hi and not np.isclose(t, hi)):
+        return float("nan")
+    return float(np.interp(t, times, values))
 
 
 def _median(values: np.ndarray) -> float:
@@ -342,6 +364,7 @@ def evaluate(
     arrival_x: tuple[float, ...] = ARRIVAL_X,
     front_at: tuple[float, ...] = (),
     profile_times: tuple[float, ...] = (),
+    info: CaseInfo | None = None,
 ) -> CaseMetrics:
     """Compute the metrics of one case from its written time steps.
 
@@ -351,8 +374,10 @@ def evaluate(
         front_at: Times [s] at which the front and Huppert's front (at the same
             depth threshold) are reported.
         profile_times: Times [s] whose depth profiles are kept.
+        info: The case's ``load_case(path)``, if already read.
     """
-    info: CaseInfo = load_case(path)
+    if info is None:
+        info = load_case(path)
     grid = info.grid
     tp = read_text(path / "constant" / "transportProperties")
     try:
@@ -368,10 +393,12 @@ def evaluate(
     times = np.array([f.time for f in frames])
 
     front = np.array([front_position(f, grid.x) for f in frames])
-    volume = np.array([grid.integrate(f.alpha) for f in frames])
+    # Unclipped alpha: the volume the solver holds, bounding errors included
+    volume = np.array([grid.integrate(f.alpha_raw) for f in frames])
     outlet = np.array([f.alpha[:, -1].max() > OUTLET_ALPHA for f in frames])
-    outflow_start = float(times[outlet][0]) if outlet.any() else None
-    before = times < outflow_start if outflow_start is not None else np.ones_like(times, dtype=bool)
+    outlet_wetting_time = float(times[outlet][0]) if outlet.any() else None
+    before = (times < outlet_wetting_time if outlet_wetting_time is not None
+              else np.ones_like(times, dtype=bool))
 
     arrival = {}
     for x_a in arrival_x:
@@ -387,7 +414,7 @@ def evaluate(
 
     dy_wall = float(grid.dy_cells[0])
     t0, t1 = SPEED_WINDOW
-    speed = (_at(times, front, t1) - _at(times, front, t0)) / (t1 - t0)
+    speed = (_interpolate(times, front, t1) - _interpolate(times, front, t0)) / (t1 - t0)
 
     cooling = mu_change = None
     if info.solve_energy:
@@ -442,9 +469,9 @@ def evaluate(
               for t in front_at if (i := _index(times, t)) is not None},
         profiles=profiles,
         profile_x=grid.x.tolist(),
-        outflow_start=outflow_start,
+        outlet_wetting_time=outlet_wetting_time,
         volume0=float(volume[0]),
-        volume_dev=float(np.abs(volume[before] - volume[0]).max()),
+        volume_dev=float(np.abs(volume[before] - volume[0]).max()) if before.any() else None,
         volume_end=float(volume[-1]),
         cooling=cooling,
         mu_change=mu_change,
@@ -476,6 +503,12 @@ def _bed(c: FilmCheck | None) -> str:
     return f"{c.bed_alpha:.2f}, {100.0 * c.bed_air:.1f}"
 
 
+def _alpha_bounds(log: LogStats) -> str:
+    """Alpha bounds of a log, the upper one against 1: "[-3.9e-05, 1 + 4.3e-05]"."""
+    over = log.alpha_max - 1.0
+    return f"[{_fmt(log.alpha_min, '.1e')}, 1 {'-' if over < 0 else '+'} {abs(over):.1e}]"
+
+
 def _fmt(value: float | None, spec: str) -> str:
     if value is None or (isinstance(value, float) and np.isnan(value)):
         return "–"
@@ -497,8 +530,8 @@ def table(results: list[CaseMetrics]) -> str:
                                    f"{m.log.time_steps if m.log else '–'}" for m in results]),
         ("execution / clock time [s]", [f"{_fmt(m.log.execution_s, 'g')} / {_fmt(m.log.clock_s, 'g')}"
                                         if m.log else "–" for m in results]),
-        ("alpha bounds (log)", [f"[{_fmt(m.log.alpha_min, '.1e')}, 1 + {_fmt(m.log.alpha_max - 1, '.1e')}]"
-                                if m.log and m.log.alpha_max is not None else "–" for m in results]),
+        ("alpha bounds (log)", [_alpha_bounds(m.log) if m.log and m.log.alpha_max is not None else "–"
+                                for m in results]),
         ("T bounds (log) [K]", [f"[{_fmt(m.log.t_min, '.2f')}, {_fmt(m.log.t_max, '.2f')}]"
                                 if m.log and m.log.t_min is not None else "–" for m in results]),
         (f"front speed {SPEED_WINDOW[0]:g}–{SPEED_WINDOW[1]:g} s [m/s]",
@@ -525,8 +558,9 @@ def table(results: list[CaseMetrics]) -> str:
             rows.append((f"bed at t = {key} s: first-cell α, air below the surface [cm] (1, 0 when wetted)",
                          [_bed(m.film.get(key)) for m in results]))
     rows += [
-        ("outflow starts [s]", [_fmt(m.outflow_start, "g") for m in results]),
-        ("largest deviation of V from V₀ before outflow [m²]", [_fmt(m.volume_dev, ".1e") for m in results]),
+        (f"outlet column first holds alpha > {OUTLET_ALPHA:g} (written times) [s]",
+         [_fmt(m.outlet_wetting_time, "g") for m in results]),
+        ("largest deviation of V from V₀ before that [m²]", [_fmt(m.volume_dev, ".1e") for m in results]),
         ("V₀, V(end) [m²]", [f"{m.volume0:.3f}, {m.volume_end:.1f}" for m in results]),
         ("max cooling, alpha > 0.99 [K]", [_fmt(m.cooling, ".1e") for m in results]),
         ("μ change for that cooling [%]",
@@ -541,12 +575,19 @@ def table(results: list[CaseMetrics]) -> str:
 # Ordinal one-hue ramp for the molasses viscosities (validated light->dark)
 _RAMP = {1: ["#2370cd"], 2: ["#6aabf1", "#0e3d7e"], 3: ["#6aabf1", "#2370cd", "#0e3d7e"]}
 _WATER_STYLE = {"lw": 1.4, "ls": (0, (1.5, 2))}
-_FINER_MESH_STYLE = {"ls": (0, (4, 2)), "lw": 1.6}
+# One dash pattern per mesh after the first case's (cycled past three; the
+# legend names the mesh)
+_MESH_DASHES = [(0, (4, 2)), (0, (7, 2, 1.5, 2)), (0, (10, 3))]
 _HUPPERT_LS = (0, (1, 1.5))
 
 
 def _styles(results: list[CaseMetrics]) -> list[dict]:
-    """Line style per case: viscous liquids on the ramp, water muted; other meshes dashed."""
+    """Line style per case.
+
+    The colour tells the liquid: the viscous liquids on the ramp, water muted
+    (and thinner). The pattern tells the mesh: the first case's mesh is solid
+    (water dotted), each other mesh dashed in its own pattern.
+    """
     import matplotlib as mpl
 
     from post import plot as pp
@@ -556,7 +597,7 @@ def _styles(results: list[CaseMetrics]) -> list[dict]:
         mpl.colors.to_hex(c) for c in mpl.colors.LinearSegmentedColormap.from_list(
             "ramp", ["#6aabf1", "#0e3d7e"])(np.linspace(0, 1, len(mu_levels)))
     ]
-    with_mesh = len({m.mesh for m in results}) > 1
+    meshes = list(dict.fromkeys(m.mesh for m in results))
     styles = []
     for m in results:
         style: dict = {"lw": 2.0}
@@ -564,8 +605,8 @@ def _styles(results: list[CaseMetrics]) -> list[dict]:
             style["color"] = colours[mu_levels.index(m.mu0)]
         else:
             style.update(color=pp.INK_MUTED, **_WATER_STYLE)
-        if with_mesh and m.mesh != results[0].mesh:
-            style.update(_FINER_MESH_STYLE)
+        if k := meshes.index(m.mesh):
+            style.update(ls=_MESH_DASHES[(k - 1) % len(_MESH_DASHES)], lw=min(style["lw"], 1.6))
         styles.append(style)
     return styles
 
@@ -606,6 +647,21 @@ def _huppert_handle(lw: float, what: str = "viscous current"):
                   label=f"Huppert (1982) {what}, same colour (dotted)")
 
 
+def check_columns(infos: list[CaseInfo]) -> str | None:
+    """Why the cases cannot share one Ritter front in a plot (None if they can).
+
+    Ritter's front depends on the end x_dam and the height H of the initial
+    column and on g.
+    """
+    first = infos[0]
+    for inf in infos[1:]:
+        if not np.allclose([inf.x_dam, inf.h0, inf.g], [first.x_dam, first.h0, first.g]):
+            return (f"{inf.path} starts from another column than {first.path} "
+                    f"(x_dam = {inf.x_dam:g} against {first.x_dam:g} m, H = {inf.h0:g} against {first.h0:g} m, "
+                    f"g = {inf.g:g} against {first.g:g} m/s²); the front plot has one Ritter front")
+    return None
+
+
 def plot_fronts(
     results: list[CaseMetrics], infos: list[CaseInfo], out: Path, with_huppert: bool = False
 ) -> None:
@@ -620,8 +676,14 @@ def plot_fronts(
         with_huppert: Also draw Huppert's viscous front of each viscous case,
             taken at the same depth threshold (``FRONT_DEPTH``),
             from ``HUPPERT_FROM`` on.
+
+    Raises:
+        ValueError: If the cases start from different columns (``check_columns``).
     """
     from post import plot as pp
+
+    if problem := check_columns(infos):
+        raise ValueError(problem)
 
     with_mesh = len({m.mesh for m in results}) > 1
     styles = _styles(results)
@@ -636,8 +698,9 @@ def plot_fronts(
             label=f"Ritter front {info.x_dam:g} m + 2√(gH) t (frictionless)")
     drawn: set[float] = set()
     for m, inf, style in zip(results, infos, styles):
-        t = np.array([0.0, *m.front_time[1:]])
-        x = np.array([inf.x_dam, *m.front_x[1:]])
+        # As in the metrics: the front at every written time, t = 0 included,
+        # is a cell centre (Ritter's front starts at the dam face x_dam)
+        t, x = np.array(m.front_time), np.array(m.front_x)
         # Stop at the outlet: the last columns drain over the open boundary,
         # so the front definition no longer tracks a front there
         hit = np.nonzero(x >= inf.grid.extent[1] - OUTLET_MARGIN)[0]
@@ -649,8 +712,10 @@ def plot_fronts(
                     color=style["color"], lw=1.2, ls=_HUPPERT_LS)
     for x_end in outlets:
         ax.axhline(x_end, color=pp.AXIS, lw=0.8)
-        ax.text(t_end * 0.99, x_end - 3, f"outlet (x = {x_end:g} m)", ha="right", va="top",
-                color=pp.INK_SECONDARY, fontsize=8)
+        # Above the line: no front of this domain gets there
+        ax.annotate(f"outlet (x = {x_end:g} m); lines stop at the first front within {OUTLET_MARGIN:g} m",
+                    (t_end * 0.99, x_end), xytext=(0, 2),
+                    textcoords="offset points", ha="right", va="bottom", color=pp.INK_SECONDARY, fontsize=8)
     ax.set(xlim=(0, t_end), ylim=(0, outlets[-1] * 1.05), xlabel="time [s]",
            ylabel=f"front position, depth ≥ {FRONT_DEPTH:g} m [m]")
     ax.grid(True, color=pp.GRIDLINE, lw=0.6)
@@ -739,6 +804,27 @@ def plot_profiles(
     _save(fig, results, out)
 
 
+def check_finished(cases: list[Path]) -> list[str]:
+    """Problems of the runs that did not finish, one line each.
+
+    A run counts as finished when its newest solver log ends with "End" and
+    the case holds the output at the ``endTime`` of its ``system/controlDict``.
+    """
+    problems = []
+    for case in cases:
+        log = read_log(case)
+        if log is None:
+            problems.append(f"{case}: no solver log (log.interThermalFoam.step*)")
+            continue
+        if not log.finished:
+            problems.append(f"{case}: {Path(log.path).name} does not end with End")
+        end = float(read_entry(read_text(case / "system" / "controlDict"), "endTime"))
+        last = float(time_dirs(case)[-1])
+        if not np.isclose(last, end):
+            problems.append(f"{case}: last written time {last:g} s, endTime {end:g} s")
+    return problems
+
+
 def check_inputs(
     cases: list[Path], times: tuple[float, ...], require_finished: bool
 ) -> tuple[list[str], list[str]]:
@@ -747,31 +833,36 @@ def check_inputs(
     Args:
         cases: Case directories.
         times: Times [s] every case must have written.
-        require_finished: Also check that every solver log ends with "End".
+        require_finished: Also check that every run finished (``check_finished``).
 
     Returns:
-        One line per case with missing times, and one per unfinished case
-        (empty unless ``require_finished``).
+        One line per case with missing times, and the problems of the
+        unfinished runs (empty unless ``require_finished``).
     """
-    missing, unfinished = [], []
+    missing = []
     for case in cases:
         written = np.array([float(n) for n in time_dirs(case)])
         absent = [t for t in times if _index(written, t) is None]
         if absent:
             missing.append(f"{case}: no output at t = {', '.join(f'{t:g}' for t in absent)} s")
-        if require_finished:
-            log = read_log(case)
-            if log is None:
-                unfinished.append(f"{case}: no solver log (log.interThermalFoam.step*)")
-            elif not log.finished:
-                unfinished.append(f"{case}: {Path(log.path).name} does not end with End")
-    return missing, unfinished
+    return missing, check_finished(cases) if require_finished else []
+
+
+def _json_safe(value):
+    """``value`` with every non-finite float replaced by None (null in JSON)."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="python -m post.metrics", description=__doc__.split("\n")[0])
     p.add_argument("cases", type=Path, nargs="+", help="case directories with results")
-    p.add_argument("--json", type=Path, help="also write the metrics (with the front series) as JSON")
+    p.add_argument("--json", type=Path, help="also write the metrics (with the front series) as JSON; undefined values are null")
     p.add_argument("--plot", type=Path, help="plot the front positions to this file (.svg or .png)")
     p.add_argument("--arrival", type=float, nargs="+", default=list(ARRIVAL_X), metavar="X",
                    help=f"positions [m] of the arrival times (default {' '.join(f'{x:g}' for x in ARRIVAL_X)})")
@@ -786,7 +877,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
                    help="go on when a case did not write a --front-at or --profile-times time "
                         "(default: fail before any output)")
     p.add_argument("--require-finished", action="store_true",
-                   help="fail unless every solver log ends with End")
+                   help="fail before any output unless every run finished: its solver log ends with End "
+                        "and it wrote the endTime of its controlDict")
     args = p.parse_args(argv)
     if args.profiles and not args.profile_times:
         p.error("--profiles needs --profile-times")
@@ -807,22 +899,26 @@ def main(argv: list[str] | None = None) -> int:
     for line in missing:
         print(f"Warning: {line}; left out", file=sys.stderr)
 
-    results = [evaluate(c, tuple(args.arrival), tuple(args.front_at), tuple(args.profile_times))
-               for c in args.cases]
+    # Read once: the plots need the cases' geometry as well
+    infos = [load_case(c) for c in args.cases]
+    if args.plot and (problem := check_columns(infos)):
+        print(f"Error: {problem}", file=sys.stderr)
+        return 1
+    results = [evaluate(c, tuple(args.arrival), tuple(args.front_at), tuple(args.profile_times), inf)
+               for c, inf in zip(args.cases, infos)]
     print(f"Front: last column with depth >= {FRONT_DEPTH:g} m\n")
     print(table(results))
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps([asdict(m) for m in results], indent=1))
+        # Undefined values (NaN) as null: NaN is not valid JSON
+        args.json.write_text(json.dumps(_json_safe([asdict(m) for m in results]), indent=1, allow_nan=False))
         print(f"\nwrote {args.json}")
-    if args.plot or args.profiles:
-        infos = [load_case(c) for c in args.cases]
-        if args.plot:
-            plot_fronts(results, infos, args.plot, args.huppert)
-            print(f"wrote {args.plot}")
-        if args.profiles:
-            plot_profiles(results, infos, args.profiles, args.huppert, tuple(args.profile_times))
-            print(f"wrote {args.profiles}")
+    if args.plot:
+        plot_fronts(results, infos, args.plot, args.huppert)
+        print(f"wrote {args.plot}")
+    if args.profiles:
+        plot_profiles(results, infos, args.profiles, args.huppert, tuple(args.profile_times))
+        print(f"wrote {args.profiles}")
     return 0
 
 
